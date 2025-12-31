@@ -3402,12 +3402,18 @@ class _HandlerEnv:
     chat_id: int
 
 
-async def _get_handler_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optional[_HandlerEnv]:
+async def _get_handler_env(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    delete_user_message: bool = True,
+) -> Optional[_HandlerEnv]:
     manager: SessionManager = context.application.bot_data["manager"]
     panel: PanelUI = context.application.bot_data["panel"]
     if not await _ensure_authorized(update, context):
         return None
-    await _delete_user_message_best_effort(update, authorized=True)
+    if delete_user_message:
+        await _delete_user_message_best_effort(update, authorized=True)
     chat_id = update.effective_chat.id if update.effective_chat else None
     if chat_id is None:
         return None
@@ -3415,21 +3421,88 @@ async def _get_handler_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    env = await _get_handler_env(update, context)
+    env = await _get_handler_env(update, context, delete_user_message=False)
     if not env:
         return
     _ui_nav_reset(context.chat_data)
     _ui_set(context.chat_data, mode="sessions")
-    await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+    # /start is commonly used as a "reset". If the user cleared the chat history, the stored
+    # panel message id may no longer be visible. Force a fresh panel message when safe.
+    old_panel_id = env.manager.get_panel_message_id(env.chat_id)
+    has_running_in_chat = False
+    for rec in env.manager.sessions.values():
+        if not rec.run or rec.status != "running":
+            continue
+        try:
+            if rec.run.stream.get_chat_id() == env.chat_id:
+                has_running_in_chat = True
+                break
+        except Exception:
+            continue
+
+    if not has_running_in_chat:
+        # Clear the stored panel id in-memory so PanelUI.ensure_panel will send a new message.
+        # If rendering fails, we restore the previous id to avoid "losing" the panel.
+        env.manager.panel_by_chat.pop(env.chat_id, None)
+    try:
+        await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+    except Exception as e:
+        if (
+            not has_running_in_chat
+            and old_panel_id is not None
+            and env.manager.get_panel_message_id(env.chat_id) is None
+        ):
+            env.manager.panel_by_chat[env.chat_id] = old_panel_id
+        _log_error("cmd_start failed.", e)
+        return
+
+    if not has_running_in_chat and old_panel_id:
+        new_panel_id = env.manager.get_panel_message_id(env.chat_id)
+        if new_panel_id and new_panel_id != old_panel_id:
+            await env.panel.delete_message_best_effort(chat_id=env.chat_id, message_id=old_panel_id)
+
+    await _delete_user_message_best_effort(update, authorized=True)
 
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    env = await _get_handler_env(update, context)
+    env = await _get_handler_env(update, context, delete_user_message=False)
     if not env:
         return
     _ui_nav_reset(context.chat_data)
     _ui_set(context.chat_data, mode="sessions")
-    await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+    # Same semantics as /start: treat as a "reset" that should always show a visible panel.
+    old_panel_id = env.manager.get_panel_message_id(env.chat_id)
+    has_running_in_chat = False
+    for rec in env.manager.sessions.values():
+        if not rec.run or rec.status != "running":
+            continue
+        try:
+            if rec.run.stream.get_chat_id() == env.chat_id:
+                has_running_in_chat = True
+                break
+        except Exception:
+            continue
+
+    if not has_running_in_chat:
+        env.manager.panel_by_chat.pop(env.chat_id, None)
+    try:
+        await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+    except Exception as e:
+        if (
+            not has_running_in_chat
+            and old_panel_id is not None
+            and env.manager.get_panel_message_id(env.chat_id) is None
+        ):
+            env.manager.panel_by_chat[env.chat_id] = old_panel_id
+        _log_error("cmd_menu failed.", e)
+        return
+
+    if not has_running_in_chat and old_panel_id:
+        new_panel_id = env.manager.get_panel_message_id(env.chat_id)
+        if new_panel_id and new_panel_id != old_panel_id:
+            await env.panel.delete_message_best_effort(chat_id=env.chat_id, message_id=old_panel_id)
+
+    await _delete_user_message_best_effort(update, authorized=True)
 
 
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
