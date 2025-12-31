@@ -8,7 +8,7 @@
 1) Клонируй репозиторий и зайди в папку:
 
 ```bash
-git clone https://github.com/yontare/vibes.git
+git clone https://github.com/shlgd/vibes.git
 cd vibes
 ```
 
