@@ -304,6 +304,8 @@ def _safe_resolve_path(raw: str) -> Tuple[Optional[Path], str]:
     raw_s = (raw or "").strip()
     if not raw_s:
         return None, "Empty path."
+    if "\x00" in raw_s:
+        return None, "Invalid path: contains NUL byte."
     try:
         p = Path(raw_s).expanduser()
     except Exception as e:
