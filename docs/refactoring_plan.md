@@ -41,7 +41,7 @@
 docs/
   refactoring_plan.md
 src/
-  vibes/
+  vibes_app/
     __init__.py
     __main__.py
     bot/
@@ -81,9 +81,9 @@ tests/
 ```
 
 ### Entry points (kept tiny)
-- `python -m vibes` → Telegram bot entry (`src/vibes/__main__.py`)
-- `python -m vibes.daemon` (or `python -m vibes.daemon.cli`) → daemon manager
-- Keep the existing `vibes` executable file as a thin wrapper (≤200 LOC), delegating to `vibes.daemon.cli`.
+- `python vibes.py` (compat) → Telegram bot entry (delegates to `src/vibes_app/bot/app.py`)
+- `python -m vibes_app` → Telegram bot entry (`src/vibes_app/__main__.py`)
+- Keep the existing `vibes` executable file as a thin wrapper (≤200 LOC), delegating to `src/vibes_app/daemon/cli.py`.
 
 ### State & runtime data (unchanged paths)
 - `.vibes/vibe_state.json` (bot state)
@@ -99,60 +99,61 @@ tests/
 
 **Config / presets**
 - `_env_flag`, `_read_toml`, `_discover_model_presets`, `MODEL_PRESETS`
-  - → `src/vibes/core/state_store.py` (toml read) + `src/vibes/core/codex_cmd.py` (model preset discovery)
+  - → `src/vibes_app/core/state_store.py` (toml read) + `src/vibes_app/core/codex_cmd.py` (model preset discovery)
 - `_codex_sandbox_mode`, `_codex_approval_policy`
-  - → `src/vibes/core/codex_cmd.py`
+  - → `src/vibes_app/core/codex_cmd.py`
 
 **Git + paths + misc utils**
-- `_detect_git_dir` → `src/vibes/utils/git.py`
-- `_safe_session_name`, `_safe_resolve_path`, `_can_create_directory` → `src/vibes/utils/paths.py`
-- `_utc_now_iso`, `_log_line`, `_log_error` → `src/vibes/utils/logging.py`
+- `_detect_git_dir` → `src/vibes_app/utils/git.py`
+- `_safe_session_name`, `_safe_resolve_path`, `_can_create_directory` → `src/vibes_app/utils/paths.py`
+- `_utc_now_iso`, `_log_line`, `_log_error` → `src/vibes_app/utils/logging.py`
 
 **Text / formatting**
 - `_truncate_text`, `_strip_html_tags`, `_telegram_safe_html_code_block`, `_tail_text`
-  - → `src/vibes/utils/text.py`
+  - → `src/vibes_app/utils/text.py`
 - `_format_duration` → `src/vibes/utils/time.py`
-- UUID helpers (`_looks_like_uuid`, `_find_first_uuid`) → `src/vibes/utils/text.py` (keep small) or `src/vibes/utils/uuid.py` if needed
+- `_format_duration` → `src/vibes_app/utils/time.py`
+- UUID helpers (`_looks_like_uuid`, `_find_first_uuid`) → `src/vibes_app/utils/uuid.py`
 
 **Logs**
 - `_tail_text_file`, `_extract_last_agent_message_from_stdout_log`, `_preview_from_stdout_log`, `_preview_from_stderr_log`
-  - → `src/vibes/utils/log_files.py`
+  - → `src/vibes_app/utils/log_files.py`
 
 **Telegram attachments**
 - `_max_attachment_bytes`, `_sanitize_attachment_basename`, `_pick_unique_dest_path`,
   `_extract_message_attachments`, `_download_attachments_to_session_root`,
   `_build_prompt_with_downloaded_files`
-  - → `src/vibes/bot/attachments.py`
+  - → `src/vibes_app/bot/attachments.py`
 
 **State migration**
 - `_atomic_write_text`, `_rewrite_legacy_log_path`, `_rewrite_state_paths_for_runtime_dir`, `_maybe_migrate_runtime_files`
-  - → `src/vibes/core/state_store.py`
+  - → `src/vibes_app/core/state_store.py`
 
 **Codex JSON event parsing**
 - `_get_event_type`, `_extract_text_delta`, `_extract_item*`, `_extract_tool_*`, `_maybe_extract_diff`,
   `_extract_session_id_explicit`
-  - → `src/vibes/core/codex_events.py`
+  - → `src/vibes_app/core/codex_events.py`
 
 **Telegram streaming UI**
-- `Segment` → `src/vibes/telegram/stream.py` (or `src/vibes/telegram/segments.py`)
-- `TelegramStream` → `src/vibes/telegram/stream.py`
-- `PanelUI` → `src/vibes/telegram/panel.py`
+- `Segment` → `src/vibes_app/telegram/stream.py`
+- `TelegramStream` → `src/vibes_app/telegram/stream.py`
+- `PanelUI` → `src/vibes_app/telegram/panel.py`
 
 **Session core**
-- `SessionRun`, `SessionRecord` → `src/vibes/core/session_models.py`
-- `SessionManager` → `src/vibes/core/session_manager.py`
+- `SessionRun`, `SessionRecord` → `src/vibes_app/core/session_models.py`
+- `SessionManager` → `src/vibes_app/core/session_manager.py`
   - `_build_codex_cmd`, `_spawn_process`, `_read_stdout`, `_read_stderr`, `_handle_json_event` split into:
-    - `src/vibes/core/codex_cmd.py`
-    - `src/vibes/core/codex_events.py`
-    - `src/vibes/core/session_manager.py`
+    - `src/vibes_app/core/codex_cmd.py`
+    - `src/vibes_app/core/codex_events.py`
+    - `src/vibes_app/core/session_manager.py`
 
 **Bot handlers & rendering**
-- `_ui_*` helpers → `src/vibes/bot/ui_state.py`
-- `_render_*` functions → `src/vibes/bot/ui_render.py`
+- `_ui_*` helpers → `src/vibes_app/bot/ui_state.py`
+- `_render_*` functions → `src/vibes_app/bot/ui_render.py`
 - `cmd_*`, `on_callback`, `_schedule_prompt_run`, `on_text`, `on_attachment`, `on_unknown_command`
-  - → `src/vibes/bot/handlers.py`
+  - → `src/vibes_app/bot/handlers.py`
 - `run_bot`, `_parse_args`, `main`
-  - → `src/vibes/bot/app.py` + `src/vibes/__main__.py`
+  - → `src/vibes_app/bot/app.py` + `src/vibes_app/__main__.py`
 
 ### `vibes` (daemon manager)
 - Env parsing (`_parse_env_file`, `_pick_str`, `_pick_int`) → `src/vibes/daemon/envfile.py`
@@ -161,6 +162,8 @@ tests/
 - State file IO (`_load_state`, `_write_state`) → `src/vibes/daemon/state.py`
 - CLI commands (`cmd_init`, `cmd_start`, `cmd_status`, `cmd_stop`, `cmd_setup`, `cmd_logs`) → `src/vibes/daemon/cli.py`
 - Keep root-level `vibes` executable as a tiny wrapper that imports and calls `vibes.daemon.cli.main()`.
+
+*(Note: the actual package is `vibes_app` due to name collisions with existing root scripts; all paths above will live under `src/vibes_app/daemon/`.)*
 
 ---
 
@@ -185,6 +188,15 @@ tests/
   - start/stop/status behavior with fake PIDs (no real processes; monkeypatch `subprocess`/`os.kill`)
 - [ ] Confirm tests pass on old code: `python -m unittest -v`
 - [ ] `git add tests/ && git commit -m "test: infrastructure and initial coverage" && git push`
+
+### Quality gates (reduce technical debt)
+- [ ] Re-check core business logic flows end-to-end (new session → run prompt → logs → stop/delete).
+- [ ] Dependency freshness check:
+  - [ ] Check latest `python-telegram-bot` and `psutil` releases and confirm our version ranges are sane.
+  - [ ] If version bumps are needed, use Context7 (`mcp__context7__query-docs`) to confirm API compatibility before changing `requirements.txt`.
+- [ ] Keep “tech debt” low:
+  - [ ] Avoid duplicate logic between wrappers (`vibes.py`, `vibes`) and `src/vibes_app/*` modules.
+  - [ ] Prefer pure helpers + small modules over shared globals.
 
 ---
 
@@ -224,4 +236,3 @@ Repeat for each extracted module:
 - [ ] Final full test run: `python -m unittest -v`
 - [ ] Update this plan: mark all tasks completed.
 - [ ] `git add . && git commit -m "feat: refactoring complete, all tests passed" && git push`
-
