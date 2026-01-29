@@ -21,7 +21,7 @@ except Exception as exc:  # noqa: BLE001 - friendly runtime error
     print(
         "Не удалось импортировать python-telegram-bot.\n"
         "Установи зависимость:\n"
-        '  pip install "python-telegram-bot>=20,<22"\n'
+        '  pip install "python-telegram-bot>=20,<23"\n'
         f"Оригинальная ошибка: {exc}",
         file=sys.stderr,
     )
@@ -44,4 +44,3 @@ __all__ = [
     "MessageHandler",
     "filters",
 ]
-

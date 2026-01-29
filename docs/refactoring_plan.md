@@ -23,7 +23,7 @@
 
 ### External dependencies
 - Python **3.10+**
-- `python-telegram-bot>=20,<22` (runtime)
+- `python-telegram-bot>=20,<23` (runtime)
 - `psutil` (optional status details in daemon script)
 - `codex` CLI (runtime; bot can start without it but can’t run sessions)
 
