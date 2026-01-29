@@ -46,17 +46,31 @@ src/
     __main__.py
     bot/
       __init__.py
-      app.py
-      handlers.py
       attachments.py
-      ui_render.py
+      callbacks.py
+      app.py
+      handlers_common.py
+      handlers_commands.py
+      handlers_callback.py
+      handlers_callback_utils.py
+      handlers_messages.py
+      render_sync.py
+      ui_render_current.py
+      ui_render_home.py
+      ui_render_paths.py
+      ui_render_session.py
+      ui_render_settings.py
+      ui_run.py
       ui_state.py
     core/
       __init__.py
-      session_models.py
-      session_manager.py
       codex_cmd.py
       codex_events.py
+      completion_notice.py
+      process_io.py
+      session_models.py
+      session_manager.py
+      session_runner.py
       state_store.py
     daemon/
       __init__.py
@@ -169,70 +183,71 @@ tests/
 
 ## 3) Phase 0 TODO (Plan + Commit)
 
-- [ ] Create `docs/refactoring_plan.md` (this file).
-- [ ] `git add docs/refactoring_plan.md && git commit -m "docs: initialization of refactoring plan" && git push`
+- [x] Create `docs/refactoring_plan.md` (this file).
+- [x] `git add docs/refactoring_plan.md && git commit -m "docs: initialization of refactoring plan" && git push`
 
 ---
 
 ## 4) Phase 1 TODO (Safety Net / Tests)
 
 ### Existing tests
-- [ ] Run existing suite on current (pre-refactor) code: `python -m unittest -v`
-- [ ] Fix/adjust tests only if they’re flaky/broken (do **not** refactor code yet).
+- [x] Run existing suite on current (pre-refactor) code: `python -m unittest -v`
+- [x] Fix/adjust tests only if they’re flaky/broken (do **not** refactor code yet).
 
 ### Add missing coverage (daemon manager)
-- [ ] Add unit tests for daemon-manager logic currently living in `vibes`:
+- [x] Add unit tests for daemon-manager logic currently living in `vibes`:
   - env parsing precedence (cli/env/.env)
   - state read/write roundtrip
   - “pid looks like vibes bot” check
   - start/stop/status behavior with fake PIDs (no real processes; monkeypatch `subprocess`/`os.kill`)
-- [ ] Confirm tests pass on old code: `python -m unittest -v`
-- [ ] `git add tests/ && git commit -m "test: infrastructure and initial coverage" && git push`
+- [x] Confirm tests pass on old code: `python -m unittest -v`
+- [x] `git add tests/ && git commit -m "test: infrastructure and initial coverage" && git push`
 
 ### Quality gates (reduce technical debt)
-- [ ] Re-check core business logic flows end-to-end (new session → run prompt → logs → stop/delete).
-- [ ] Dependency freshness check:
-  - [ ] Check latest `python-telegram-bot` and `psutil` releases and confirm our version ranges are sane.
-  - [ ] If version bumps are needed, use Context7 (`mcp__context7__query-docs`) to confirm API compatibility before changing `requirements.txt`.
-- [ ] Keep “tech debt” low:
-  - [ ] Avoid duplicate logic between wrappers (`vibes.py`, `vibes`) and `src/vibes_app/*` modules.
-  - [ ] Prefer pure helpers + small modules over shared globals.
+- [x] Re-check core business logic flows end-to-end (new session → run prompt → logs → stop/delete).
+- [x] Dependency freshness check:
+  - [x] Check latest `python-telegram-bot` and `psutil` releases and confirm our version ranges are sane.
+  - [x] Bump `python-telegram-bot` upper bound when safe (`>=20,<23`); keep API compatible (no Context7 needed).
+- [x] Keep “tech debt” low:
+  - [x] Avoid duplicate logic between wrappers (`vibes.py`, `vibes`) and `src/vibes_app/*` modules.
+  - [x] Prefer pure helpers + small modules over shared globals.
+- [x] Add `.env.example` and keep `.env` gitignored (no token commits).
 
 ---
 
 ## 5) Phase 2 TODO (Incremental Refactor, KISS Cycle)
 
 ### Bootstrap new structure (no behavior change)
-- [ ] Add `src/vibes/...` package skeleton + `sitecustomize.py` to add `src` to `sys.path`.
-- [ ] Add minimal `src/vibes/__main__.py` that calls `vibes.bot.app.main()`.
-- [ ] Update daemon manager to spawn `python -m vibes` instead of `vibes.py` file.
-- [ ] Run tests; commit + push.
+- [x] Add `src/vibes_app/...` package skeleton + `sitecustomize.py` to add `src` to `sys.path`.
+- [x] Add minimal `src/vibes_app/__main__.py` that calls `vibes_app.bot.app.main()`.
+- [x] Keep daemon manager spawning `vibes.py` (now a thin compat shim); keep root `vibes` wrapper thin.
+- [x] Run tests; commit + push.
 
 ### Modular moves (one module at a time)
 Repeat for each extracted module:
-- [ ] Move a cohesive group of functions/classes (≤500 LOC/file).
-- [ ] Update imports + re-exports to keep test surface stable.
-- [ ] Run tests immediately.
-- [ ] Commit + push with `refactor: moved <module> and optimized according to KISS`.
+- [x] Move a cohesive group of functions/classes (≤500 LOC/file).
+- [x] Update imports + re-exports to keep test surface stable.
+- [x] Run tests immediately.
+- [x] Commit + push with `refactor: moved <module> and optimized according to KISS`.
 
 **Suggested extraction order (lowest risk → highest risk):**
-1. [ ] `utils` (text, time, paths, git, logging, log_files)
-2. [ ] `core/state_store` (atomic write + migration)
-3. [ ] `core/codex_events` (pure parsing helpers)
-4. [ ] `telegram/stream` + `telegram/panel` (UI primitives)
-5. [ ] `core/session_models`
-6. [ ] `core/codex_cmd` (command builder)
-7. [ ] `core/session_manager` (process orchestration)
-8. [ ] `bot/ui_state` + `bot/ui_render`
-9. [ ] `bot/attachments`
-10. [ ] `bot/handlers` + `bot/app`
-11. [ ] `daemon/*` split (envfile/state/process/cli), shrink root `vibes` wrapper
+1. [x] `utils` (text, time, paths, git, logging, log_files)
+2. [x] `core/state_store` (atomic write + migration)
+3. [x] `core/codex_events` (pure parsing helpers)
+4. [x] `telegram/stream` + `telegram/panel` (UI primitives)
+5. [x] `core/session_models`
+6. [x] `core/codex_cmd` (command builder)
+7. [x] `core/session_manager` + `core/session_runner` + `core/process_io`
+8. [x] `bot/ui_state` + `bot/ui_render_*`
+9. [x] `bot/attachments`
+10. [x] `bot/handlers_*` + `bot/app`
+11. [x] `daemon/*` split (envfile/state/process/cli), shrink root `vibes` wrapper
 
 ---
 
 ## 6) Phase 3 TODO (Final Integration & Cleanup)
 
-- [ ] Ensure entry points are “thin” (orchestration only): `src/vibes/__main__.py` + root `vibes` wrapper.
-- [ ] Final full test run: `python -m unittest -v`
-- [ ] Update this plan: mark all tasks completed.
-- [ ] `git add . && git commit -m "feat: refactoring complete, all tests passed" && git push`
+- [x] Ensure entry points are “thin” (orchestration only): `src/vibes_app/__main__.py` + root `vibes` wrapper + `vibes.py` compat shim.
+- [x] Final full test run: `python -m unittest discover -s tests -v`
+- [x] Update this plan: mark all tasks completed.
+- [x] `git add . && git commit -m "feat: refactoring complete, all tests passed" && git push`
