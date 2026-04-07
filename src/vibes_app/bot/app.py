@@ -21,7 +21,7 @@ from ..telegram_deps import (
 )
 from ..utils.logging import log_error, log_line
 from .handlers_callback import on_callback
-from .handlers_commands import cmd_list, cmd_logs, cmd_menu, cmd_new, cmd_start, cmd_stop, cmd_use
+from .handlers_commands import cmd_list, cmd_logs, cmd_menu, cmd_new, cmd_resumes, cmd_start, cmd_stop, cmd_use
 from .handlers_messages import on_attachment, on_text, on_unknown_command
 
 
@@ -44,6 +44,7 @@ async def run_bot(*, token: str, admin_id: Optional[int]) -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("menu", cmd_menu))
     app.add_handler(CommandHandler("new", cmd_new))
+    app.add_handler(CommandHandler("resumes", cmd_resumes))
     app.add_handler(CommandHandler("use", cmd_use))
     app.add_handler(CommandHandler("list", cmd_list))
     app.add_handler(CommandHandler("logs", cmd_logs))

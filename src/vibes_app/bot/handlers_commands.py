@@ -122,6 +122,39 @@ async def cmd_use(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
 
 
+async def cmd_resumes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg_text = update.message.text if update.message else ""
+    env = await get_handler_env(update, context)
+    if not env:
+        return
+
+    tokens = _parse_tokens(msg_text or "")
+    if len(tokens) < 2:
+        _ui_set(context.chat_data, mode="sessions", notice="Usage: /resumes <session_name_or_id>")
+        await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+        return
+
+    target = tokens[1]
+
+    # Try to find session by exact name or topic_id or thread_id
+    session_name = None
+    if target in env.manager.sessions:
+        session_name = target
+    else:
+        for name, rec in env.manager.sessions.items():
+            if rec.thread_id == target or str(rec.topic_id) == target:
+                session_name = name
+                break
+
+    if not session_name:
+        _ui_set(context.chat_data, mode="sessions", notice=f"Unknown session or session id: {target}")
+        await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+        return
+
+    _ui_set(context.chat_data, mode="session", session=session_name)
+    await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
+
+
 async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg_text = update.message.text if update.message else ""
     env = await get_handler_env(update, context)
@@ -137,6 +170,17 @@ async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             _ui_set(context.chat_data, mode="new_name", notice=err)
             await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
             return
+
+        chat = update.effective_chat
+        if chat and chat.type == "supergroup":
+            try:
+                bot = context.bot
+                topic = await bot.create_forum_topic(chat_id=chat.id, name=f"Codex: {rec.name}")
+                rec.topic_id = topic.message_thread_id
+                await env.manager.save_state()
+            except Exception as e:
+                log_error("Failed to create forum topic for new session.", e)
+
         _ui_set(context.chat_data, mode="session", session=rec.name)
         await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)
         return

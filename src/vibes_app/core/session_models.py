@@ -43,5 +43,7 @@ class SessionRecord:
     last_stderr_log: Optional[str] = None
     last_run_duration_s: Optional[int] = None
     pending_delete: bool = False
+    topic_id: Optional[int] = None
+    panel_message_id: Optional[int] = None
     run: Optional[SessionRun] = None
 

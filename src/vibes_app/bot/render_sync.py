@@ -37,13 +37,19 @@ async def _render_and_sync(
     context: Any,
     chat_id: int,
 ) -> None:
-    panel_message_id = manager.get_panel_message_id(chat_id)
-    if not panel_message_id:
-        panel_message_id = await panel.ensure_panel(chat_id)
-
     ui = _ui_get(context.chat_data)
     mode = ui.get("mode") if isinstance(ui.get("mode"), str) else "sessions"
     session_name = ui.get("session") if isinstance(ui.get("session"), str) else None
+
+    topic_id = None
+    if session_name in manager.sessions:
+        rec = manager.sessions.get(session_name)
+        if rec:
+            topic_id = rec.topic_id
+
+    panel_message_id = manager.get_panel_message_id(chat_id, session_name=session_name)
+    if not panel_message_id:
+        panel_message_id = await panel.ensure_panel(chat_id, session_name=session_name, message_thread_id=topic_id)
 
     if mode == "session" and isinstance(session_name, str) and session_name in manager.sessions:
         rec = manager.sessions.get(session_name)
@@ -103,5 +109,7 @@ async def _render_and_sync(
         text_html=text_html,
         reply_markup=reply_markup,
         update_state_on_replace=True,
+        session_name=session_name,
+        message_thread_id=topic_id,
     )
     await _sync_input_prompt(panel, chat_id=chat_id, chat_data=context.chat_data)

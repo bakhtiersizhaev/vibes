@@ -37,7 +37,7 @@ class _FakePanelUI:
         self.last_text_html: str | None = None
         self.last_reply_markup: object | None = None
 
-    async def ensure_panel(self, chat_id: int) -> int:  # pragma: no cover
+    async def ensure_panel(self, chat_id: int, **kwargs) -> int:  # pragma: no cover
         return self.fixed_panel_message_id
 
     async def render_to_message(
@@ -48,6 +48,7 @@ class _FakePanelUI:
         text_html: str,
         reply_markup: object,
         update_state_on_replace: bool,
+        **kwargs
     ) -> int:
         self.last_text_html = text_html
         self.last_reply_markup = reply_markup

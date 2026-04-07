@@ -49,7 +49,7 @@ class _FakePanelUI:
         self.renders: list[tuple[int, int, str, object]] = []
         self.deletes: list[tuple[int, int]] = []
 
-    async def ensure_panel(self, _chat_id: int) -> int:
+    async def ensure_panel(self, _chat_id: int, **kwargs) -> int:
         return self.fixed_panel_message_id
 
     async def render_to_message(
@@ -60,6 +60,7 @@ class _FakePanelUI:
         text_html: str,
         reply_markup: object,
         update_state_on_replace: bool,
+        **kwargs
     ) -> int:
         self.renders.append((chat_id, message_id, text_html, reply_markup))
         return message_id

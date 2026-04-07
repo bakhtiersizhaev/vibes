@@ -14,18 +14,22 @@ class PanelUI:
         self.application = application
         self.manager = manager
 
-    async def ensure_panel(self, chat_id: int) -> int:
-        existing = self.manager.get_panel_message_id(chat_id)
+    async def ensure_panel(self, chat_id: int, *, session_name: Optional[str] = None, message_thread_id: Optional[int] = None) -> int:
+        existing = self.manager.get_panel_message_id(chat_id, session_name=session_name)
         if existing:
             return existing
 
-        msg = await self.application.bot.send_message(
-            chat_id=chat_id,
-            text="<b>Vibes</b>\n\nLoading…",
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
-        await self.manager.set_panel_message_id(chat_id, msg.message_id)
+        kwargs: Dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": "<b>Vibes</b>\n\nLoading…",
+            "parse_mode": ParseMode.HTML,
+            "disable_web_page_preview": True,
+        }
+        if message_thread_id is not None:
+            kwargs["message_thread_id"] = message_thread_id
+
+        msg = await self.application.bot.send_message(**kwargs)
+        await self.manager.set_panel_message_id(chat_id, msg.message_id, session_name=session_name)
         return msg.message_id
 
     async def render_panel(
@@ -33,14 +37,19 @@ class PanelUI:
         chat_id: int,
         text_html: str,
         reply_markup: Optional[InlineKeyboardMarkup] = None,
+        *,
+        session_name: Optional[str] = None,
+        message_thread_id: Optional[int] = None,
     ) -> int:
-        message_id = await self.ensure_panel(chat_id)
+        message_id = await self.ensure_panel(chat_id, session_name=session_name, message_thread_id=message_thread_id)
         return await self.render_to_message(
             chat_id=chat_id,
             message_id=message_id,
             text_html=text_html,
             reply_markup=reply_markup,
             update_state_on_replace=True,
+            session_name=session_name,
+            message_thread_id=message_thread_id,
         )
 
     async def render_to_message(
@@ -51,6 +60,8 @@ class PanelUI:
         text_html: str,
         reply_markup: Optional[InlineKeyboardMarkup],
         update_state_on_replace: bool,
+        session_name: Optional[str] = None,
+        message_thread_id: Optional[int] = None,
     ) -> int:
         async def _send_new_panel(*, text: str, parse_mode: Optional[str]) -> int:
             kwargs: Dict[str, Any] = {
@@ -59,11 +70,13 @@ class PanelUI:
                 "disable_web_page_preview": True,
                 "reply_markup": reply_markup,
             }
+            if message_thread_id is not None:
+                kwargs["message_thread_id"] = message_thread_id
             if parse_mode:
                 kwargs["parse_mode"] = parse_mode
             msg = await self.application.bot.send_message(**kwargs)
             if update_state_on_replace:
-                await self.manager.set_panel_message_id(chat_id, msg.message_id)
+                await self.manager.set_panel_message_id(chat_id, msg.message_id, session_name=session_name)
             return msg.message_id
 
         async def _edit_message(*, text: str, parse_mode: Optional[str]) -> None:
