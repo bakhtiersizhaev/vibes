@@ -171,6 +171,8 @@ class SessionManager:
                     if isinstance(payload.get("last_run_duration_s"), int)
                     else None,
                     pending_delete=payload.get("pending_delete") if isinstance(payload.get("pending_delete"), bool) else False,
+                    topic_id=payload.get("topic_id") if isinstance(payload.get("topic_id"), int) else None,
+                    panel_message_id=payload.get("panel_message_id") if isinstance(payload.get("panel_message_id"), int) else None,
                 )
 
                 if rec.last_stdout_log:
@@ -233,14 +235,26 @@ class SessionManager:
                     "last_stderr_log": rec.last_stderr_log,
                     "last_run_duration_s": rec.last_run_duration_s,
                     "pending_delete": rec.pending_delete,
+                    "topic_id": rec.topic_id,
+                    "panel_message_id": rec.panel_message_id,
                 }
             text = json.dumps(payload, ensure_ascii=False, indent=2)
             await asyncio.to_thread(state_store.atomic_write_text, self.state_path, text)
 
-    def get_panel_message_id(self, chat_id: int) -> Optional[int]:
+    def get_panel_message_id(self, chat_id: int, *, session_name: Optional[str] = None) -> Optional[int]:
+        if session_name:
+            rec = self.sessions.get(session_name)
+            if rec and rec.panel_message_id is not None:
+                return rec.panel_message_id
         return self.panel_by_chat.get(chat_id)
 
-    async def set_panel_message_id(self, chat_id: int, message_id: int) -> None:
+    async def set_panel_message_id(self, chat_id: int, message_id: int, *, session_name: Optional[str] = None) -> None:
+        if session_name:
+            rec = self.sessions.get(session_name)
+            if rec:
+                rec.panel_message_id = message_id
+                await self.save_state()
+                return
         self.panel_by_chat[chat_id] = message_id
         await self.save_state()
 
