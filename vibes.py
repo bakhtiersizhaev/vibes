@@ -47,6 +47,7 @@ from vibes_app.utils.log_files import (  # noqa: E402
 )
 from vibes_app.utils.log_files import preview_from_stderr_log as _preview_from_stderr_log  # noqa: E402
 from vibes_app.utils.log_files import preview_from_stdout_log as _preview_from_stdout_log  # noqa: E402
+from vibes_app.utils.paths import can_create_directory as _can_create_directory  # noqa: E402
 from vibes_app.utils.paths import safe_resolve_path as _safe_resolve_path  # noqa: E402
 from vibes_app.utils.paths import safe_session_name as _safe_session_name  # noqa: E402
 from vibes_app.utils.text import parse_tokens as _parse_tokens  # noqa: E402
