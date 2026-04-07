@@ -140,3 +140,47 @@ class UtilsTests(unittest.TestCase):
         resolved3, err3 = vibes._safe_resolve_path("bad\x00path")
         self.assertIsNone(resolved3)
         self.assertTrue(err3)
+
+    def test_can_create_directory(self) -> None:
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        import os
+        import stat
+
+        with TemporaryDirectory() as td:
+            base = Path(td)
+
+            # 1. Happy path: new directory in writable parent
+            p1 = base / "new_dir"
+            self.assertTrue(vibes._can_create_directory(p1))
+
+            # 2. Failure: already exists
+            p1.mkdir()
+            self.assertFalse(vibes._can_create_directory(p1))
+
+            # 3. Failure: parent is a file
+            p2 = base / "a_file"
+            p2.write_text("hello")
+            p2_child = p2 / "child"
+            self.assertFalse(vibes._can_create_directory(p2_child))
+
+            # 4. Nested path: should check first existing parent
+            p3 = base / "nested" / "deep" / "dir"
+            self.assertTrue(vibes._can_create_directory(p3))
+
+            # 5. Failure: parent not writable
+            p4_parent = base / "readonly_parent"
+            p4_parent.mkdir()
+            p4 = p4_parent / "child"
+
+            # Make parent readonly
+            original_mode = os.stat(p4_parent).st_mode
+            try:
+                os.chmod(p4_parent, original_mode & ~stat.S_IWUSR)
+                # On some systems/filesystems (like root or certain CI envs),
+                # chmod might not behave as expected for the owner,
+                # but we try to test it.
+                if not os.access(p4_parent, os.W_OK):
+                    self.assertFalse(vibes._can_create_directory(p4))
+            finally:
+                os.chmod(p4_parent, original_mode)
