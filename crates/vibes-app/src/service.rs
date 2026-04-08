@@ -89,6 +89,10 @@ where
         }
     }
 
+    pub fn store(&self) -> &S {
+        &self.store
+    }
+
     pub fn start_new(&self, input: StartNewSessionInput) -> Result<BindOutcome, AppServiceError> {
         let StartNewSessionInput {
             request,
@@ -128,18 +132,22 @@ where
     }
 
     pub fn resume(&self, request: ResumeSessionRequest) -> Result<BindOutcome, AppServiceError> {
-        let session = self
-            .runtime
-            .resume_session(&request.target, &request.workspace_root)?;
-        let existing = self.store.get_by_session_id(&session.codex_session_id)?;
+        let existing = self.find_existing_binding(&request.target)?;
+        let runtime_target = existing
+            .as_ref()
+            .map(|binding| binding.session.codex_session_id.as_str())
+            .unwrap_or(request.target.as_str());
         let workspace_root = if request.workspace_root.trim().is_empty() {
             existing
                 .as_ref()
                 .map(|binding| binding.workspace_root.clone())
                 .unwrap_or_default()
         } else {
-            request.workspace_root
+            request.workspace_root.clone()
         };
+        let session = self
+            .runtime
+            .resume_session(runtime_target, &workspace_root)?;
 
         let binding = SessionBinding {
             scope: request.scope,
@@ -153,6 +161,25 @@ where
             created_topic_id: None,
             created_topic_title: None,
         })
+    }
+
+    fn find_existing_binding(
+        &self,
+        target: &str,
+    ) -> Result<Option<SessionBinding>, AppServiceError> {
+        let trimmed = target.trim();
+        if let Some(binding) = self.store.get_by_display_name(trimmed)? {
+            return Ok(Some(binding));
+        }
+        if let Some(binding) = self.store.get_by_session_id(trimmed)? {
+            return Ok(Some(binding));
+        }
+        if let Ok(topic_id) = trimmed.parse::<i64>()
+            && let Some(binding) = self.store.get_by_topic_id(topic_id)?
+        {
+            return Ok(Some(binding));
+        }
+        Ok(None)
     }
 }
 
@@ -265,5 +292,36 @@ mod tests {
 
         assert_eq!(rebound.binding.scope.scope_key(), "topic:-100:99");
         assert_eq!(rebound.binding.workspace_root, "/tmp/original");
+    }
+
+    #[test]
+    fn resume_resolves_existing_session_by_display_name() {
+        let service = AppService::new(
+            InMemoryBindingStore::default(),
+            FakeRuntime,
+            FakeTopics::default(),
+        );
+
+        service
+            .start_new(StartNewSessionInput {
+                request: StartSessionRequest {
+                    scope: ChatScope::Direct(1),
+                    label: Some("rust-rewrite".to_owned()),
+                    workspace_root: "/tmp/existing".to_owned(),
+                },
+                create_topic_for_group: false,
+            })
+            .unwrap();
+
+        let rebound = service
+            .resume(ResumeSessionRequest {
+                scope: ChatScope::Direct(2),
+                target: "rust-rewrite".to_owned(),
+                workspace_root: String::new(),
+            })
+            .unwrap();
+
+        assert_eq!(rebound.binding.session.codex_session_id, "sess-new-1");
+        assert_eq!(rebound.binding.workspace_root, "/tmp/existing");
     }
 }
