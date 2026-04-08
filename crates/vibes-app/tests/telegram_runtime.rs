@@ -561,6 +561,74 @@ fn returns_request_error_when_reply_send_fails() {
     );
 }
 
+#[derive(Debug, Default)]
+struct ThreadFailRequester {
+    sent: Mutex<Vec<(i64, Option<i64>, String)>>,
+}
+
+#[async_trait(?Send)]
+impl TelegramRequester for ThreadFailRequester {
+    async fn send_text(
+        &self,
+        target: &ReplyTarget,
+        text: &str,
+    ) -> Result<(), TelegramRequestError> {
+        if target.message_thread_id.is_some() {
+            return Err(TelegramRequestError::new("thread send boom"));
+        }
+        self.sent
+            .lock()
+            .expect("thread fail requester lock poisoned")
+            .push((target.chat_id, target.message_thread_id, text.to_owned()));
+        Ok(())
+    }
+}
+
+#[test]
+fn falls_back_to_chat_reply_when_thread_send_fails() {
+    let requester = ThreadFailRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("transcript after fallback".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: Some(900),
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Topic {
+                chat_id: -1001293752024,
+                topic_id: 900,
+            },
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("fallback send");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert_eq!(text, "transcript after fallback");
+
+    let sent = requester
+        .sent
+        .lock()
+        .expect("thread fail requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, 408258968);
+    assert_eq!(sent[0].1, None);
+    assert_eq!(sent[0].2, "transcript after fallback");
+}
+
 #[test]
 fn ignores_non_message_updates() {
     let controller = controller();

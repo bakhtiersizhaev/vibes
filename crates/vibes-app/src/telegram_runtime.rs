@@ -122,7 +122,7 @@ where
 
     match action {
         TelegramUpdateAction::Reply { target, text } => {
-            requester.send_text(&target, &text).await?;
+            send_with_thread_fallback(requester, &target, &text).await?;
             Ok(RuntimeOutcome::Replied { target, text })
         }
         TelegramUpdateAction::DispatchPrompt {
@@ -149,7 +149,7 @@ where
     match outcome {
         RuntimeOutcome::Ignored => Ok(RuntimeOutcome::Ignored),
         RuntimeOutcome::Replied { target, text } => {
-            requester.send_text(&target, &text).await?;
+            send_with_thread_fallback(requester, &target, &text).await?;
             Ok(RuntimeOutcome::Replied { target, text })
         }
         RuntimeOutcome::PromptReady {
@@ -161,8 +161,36 @@ where
                 Ok(text) => text,
                 Err(err) => format!("Codex execution failed: {err}"),
             };
-            requester.send_text(&target, &text).await?;
+            send_with_thread_fallback(requester, &target, &text).await?;
             Ok(RuntimeOutcome::Replied { target, text })
         }
+    }
+}
+
+async fn send_with_thread_fallback<Q>(
+    requester: &Q,
+    target: &ReplyTarget,
+    text: &str,
+) -> Result<(), TelegramRequestError>
+where
+    Q: TelegramRequester,
+{
+    match requester.send_text(target, text).await {
+        Ok(()) => Ok(()),
+        Err(first_err) if target.message_thread_id.is_some() => {
+            let fallback_target = ReplyTarget {
+                chat_id: target.chat_id,
+                message_thread_id: None,
+            };
+            requester
+                .send_text(&fallback_target, text)
+                .await
+                .map_err(|fallback_err| {
+                    TelegramRequestError::new(format!(
+                        "{first_err}; fallback without thread failed: {fallback_err}"
+                    ))
+                })
+        }
+        Err(err) => Err(err),
     }
 }
