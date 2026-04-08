@@ -163,6 +163,47 @@ mod tests {
     }
 
     #[test]
+    fn extracts_caption_when_text_absent() {
+        let update = parse_update(
+            r#"{
+                "message": {
+                    "chat": {
+                        "id": -1001293752024,
+                        "title": "CryptoInside Chat",
+                        "type": "supergroup",
+                        "username": "cryptoinside_talk",
+                        "is_forum": true
+                    },
+                    "date": 1721592580,
+                    "from": {
+                        "first_name": "the Cable Guy",
+                        "id": 5964236329,
+                        "is_bot": false,
+                        "language_code":"en",
+                        "username": "spacewhaleblues"
+                    },
+                    "message_id": 134549,
+                    "message_thread_id": 134545,
+                    "caption": "caption prompt",
+                    "photo": [
+                        {
+                            "file_id": "id",
+                            "file_unique_id": "uq",
+                            "width": 1,
+                            "height": 1
+                        }
+                    ]
+                },
+                "update_id": 439432603
+            }"#,
+        );
+
+        let incoming = extract_text_message(&update).expect("caption extracted");
+        assert_eq!(incoming.text, "caption prompt");
+        assert_eq!(incoming.envelope.message_thread_id, Some(134545));
+    }
+
+    #[test]
     fn ignores_non_message_updates() {
         let update = parse_update(
             r#"{
