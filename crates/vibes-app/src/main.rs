@@ -96,71 +96,88 @@ async fn main() -> anyhow::Result<()> {
 
     info!(bot_username = ?bot_username, db_path, workspace_root, "vibes polling loop started");
 
-    while let Some(update) = stream.next().await {
-        match update {
-            Ok(update) => match run_telegram_update(
-                &controller,
-                &bot,
-                &update,
-                bot_username.as_deref(),
-                &workspace_root,
-            )
-            .await
-            {
-                Ok(RuntimeOutcome::Ignored) => {}
-                Ok(RuntimeOutcome::Replied { target, .. }) => {
-                    info!(
-                        chat_id = target.chat_id,
-                        thread_id = target.message_thread_id,
-                        "reply sent"
-                    );
-                }
-                Ok(RuntimeOutcome::PromptReady {
-                    target,
-                    binding,
-                    prompt,
-                }) => {
-                    info!(
-                        chat_id = target.chat_id,
-                        thread_id = target.message_thread_id,
-                        scope = %binding.scope.scope_key(),
-                        session_id = %binding.session.codex_session_id,
-                        prompt_len = prompt.len(),
-                        "prompt ready for codex execution"
-                    );
-                    match complete_runtime_outcome(
+    let shutdown = tokio::signal::ctrl_c();
+    pin!(shutdown);
+
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => {
+                info!("ctrl-c received, stopping polling loop");
+                break;
+            }
+            update = stream.next() => {
+                let Some(update) = update else {
+                    info!("polling listener stream ended");
+                    break;
+                };
+
+                match update {
+                    Ok(update) => match run_telegram_update(
+                        &controller,
                         &bot,
-                        &executor,
-                        RuntimeOutcome::PromptReady {
-                            target,
-                            binding,
-                            prompt,
-                        },
+                        &update,
+                        bot_username.as_deref(),
+                        &workspace_root,
                     )
                     .await
                     {
+                        Ok(RuntimeOutcome::Ignored) => {}
                         Ok(RuntimeOutcome::Replied { target, .. }) => {
                             info!(
                                 chat_id = target.chat_id,
                                 thread_id = target.message_thread_id,
-                                "codex execution reply sent"
+                                "reply sent"
                             );
                         }
-                        Ok(other) => {
-                            info!(outcome = ?other, "unexpected runtime completion outcome");
+                        Ok(RuntimeOutcome::PromptReady {
+                            target,
+                            binding,
+                            prompt,
+                        }) => {
+                            info!(
+                                chat_id = target.chat_id,
+                                thread_id = target.message_thread_id,
+                                scope = %binding.scope.scope_key(),
+                                session_id = %binding.session.codex_session_id,
+                                prompt_len = prompt.len(),
+                                "prompt ready for codex execution"
+                            );
+                            match complete_runtime_outcome(
+                                &bot,
+                                &executor,
+                                RuntimeOutcome::PromptReady {
+                                    target,
+                                    binding,
+                                    prompt,
+                                },
+                            )
+                            .await
+                            {
+                                Ok(RuntimeOutcome::Replied { target, .. }) => {
+                                    info!(
+                                        chat_id = target.chat_id,
+                                        thread_id = target.message_thread_id,
+                                        "codex execution reply sent"
+                                    );
+                                }
+                                Ok(other) => {
+                                    info!(outcome = ?other, "unexpected runtime completion outcome");
+                                }
+                                Err(err) => {
+                                    error!(error = %err, "failed to complete codex execution outcome");
+                                }
+                            }
                         }
                         Err(err) => {
-                            error!(error = %err, "failed to complete codex execution outcome");
+                            error!(error = %err, "failed to handle telegram update");
                         }
-                    }
+                    },
+                    Err(err) => error!(error = ?err, "polling listener error"),
                 }
-                Err(err) => {
-                    error!(error = %err, "failed to handle telegram update");
-                }
-            },
-            Err(err) => error!(error = ?err, "polling listener error"),
+            }
         }
     }
 
+    info!("vibes polling loop stopped");
     Ok(())
 }

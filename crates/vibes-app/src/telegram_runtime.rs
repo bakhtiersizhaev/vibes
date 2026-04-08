@@ -148,10 +148,7 @@ where
 {
     match outcome {
         RuntimeOutcome::Ignored => Ok(RuntimeOutcome::Ignored),
-        RuntimeOutcome::Replied { target, text } => {
-            send_with_thread_fallback(requester, &target, &text).await?;
-            Ok(RuntimeOutcome::Replied { target, text })
-        }
+        RuntimeOutcome::Replied { target, text } => Ok(RuntimeOutcome::Replied { target, text }),
         RuntimeOutcome::PromptReady {
             target,
             binding,

@@ -131,6 +131,20 @@ VIBES_CLAUDE_PERMISSION_MODE=bypassPermissions
 ./uninstall.sh --yes
 ```
 
+## STATUS.MD refresh
+
+To sync the metadata header in `STATUS.MD` with the current repo state, run:
+
+```bash
+python3 scripts/update_status_md.py
+```
+
+It refreshes only these header fields:
+- `Last updated`
+- `Branch`
+- `Repo`
+- `Main SHA`
+
 ## Troubleshooting
 
 - `vibes: command not found`: перезапусти терминал или выполни `source ~/.zshrc` / `source ~/.bashrc` / `source ~/.profile`

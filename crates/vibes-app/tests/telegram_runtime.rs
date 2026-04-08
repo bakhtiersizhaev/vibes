@@ -370,6 +370,38 @@ fn falls_back_to_chat_reply_for_resume_reply_when_thread_send_fails() {
 }
 
 #[test]
+fn complete_runtime_outcome_does_not_resend_existing_reply() {
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("unused".to_owned())),
+    };
+    let outcome = RuntimeOutcome::Replied {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: Some(900),
+        },
+        text: "already sent".to_owned(),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("completion ok");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert_eq!(text, "already sent");
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn prompt_ready_executes_and_sends_transcript_reply() {
     let requester = FakeRequester::default();
     let executor = FakeExecutor {
