@@ -7,10 +7,15 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 async-trait.workspace = true
 serde_json.workspace = true
 teloxide.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 vibes-codex = { path = "../vibes-codex" }
 vibes-core = { path = "../vibes-core" }
 vibes-store = { path = "../vibes-store" }
