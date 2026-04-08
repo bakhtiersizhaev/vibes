@@ -335,6 +335,83 @@ fn prompt_ready_executes_and_sends_transcript_reply() {
 }
 
 #[test]
+fn topic_prompt_update_executes_and_replies_back_into_same_thread() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Topic {
+            chat_id: -1001293752024,
+            topic_id: 900,
+        },
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("topic transcript".to_owned())),
+    };
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134548,
+                "message_thread_id": 900,
+                "text": "continue parser work"
+            },
+            "update_id": 439432602
+        }"#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::PromptReady { target, prompt, .. } = &outcome else {
+        panic!("expected prompt-ready outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert_eq!(prompt, "continue parser work");
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("execution ok");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert_eq!(text, "topic transcript");
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(
+        sent.as_slice(),
+        &[(-1001293752024, Some(900), "topic transcript".to_owned())]
+    );
+}
+
+#[test]
 fn prompt_execution_failure_is_sent_as_reply_text() {
     let requester = FakeRequester::default();
     let executor = FakeExecutor {
