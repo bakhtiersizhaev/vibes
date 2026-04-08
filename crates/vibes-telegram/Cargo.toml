@@ -7,4 +7,6 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+serde_json.workspace = true
+teloxide.workspace = true
 vibes-core = { path = "../vibes-core" }

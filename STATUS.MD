@@ -1,6 +1,6 @@
 # STATUS.MD
 
-Last updated: 2026-04-08 12:57 +05
+Last updated: 2026-04-08 13:18 +05
 Branch: main
 Repo: /Users/bkh/openclaw-assistant-integration-work/vibes
 Main SHA: d8508cd0bce5df9f00c623e64f995ba7a2f671d9
@@ -36,14 +36,16 @@ Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topi
 - codex streaming/cancellation tests added (`crates/vibes-codex/tests/runner_stream.rs`)
 - end-to-end controller flow tests added in `crates/vibes-testkit/src/lib.rs` for `/new` -> topic bind -> prompt, `/resume` -> rebind -> prompt, and unbound-topic help flow
 - topic-title routing integrated into `/new` flow
+- `vibes-telegram` update adapter added (`crates/vibes-telegram/src/update_adapter.rs`) with real `teloxide` update -> `TelegramEnvelope` extraction and reply target mapping
+- adapter-level Telegram fixtures added for forum-topic text, private text, and ignored non-message updates
 - full green gate achieved and pushed to `main`:
   - `cargo fmt --all`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   - `cargo test --workspace --all-features`
 
 ## Current loop
-1. Flesh out real Telegram adapter from controller primitives to update handling + responses
-2. Expand end-to-end coverage from controller/service to real adapter-level update ingestion
+1. Wire the new `vibes-telegram` update adapter into a real runtime/requester path instead of fixture-only coverage
+2. Expand adapter-level coverage from extracted updates into reply/render dispatch flow
 3. Continue direct-to-main delivery with green checks after each increment
 
 ## Active risks
