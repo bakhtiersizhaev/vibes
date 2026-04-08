@@ -629,6 +629,9 @@ struct ThreadFailRequester {
     sent: Mutex<Vec<(i64, Option<i64>, String)>>,
 }
 
+#[derive(Debug, Default)]
+struct ThreadThenChatFailRequester;
+
 #[async_trait(?Send)]
 impl TelegramRequester for ThreadFailRequester {
     async fn send_text(
@@ -645,6 +648,54 @@ impl TelegramRequester for ThreadFailRequester {
             .push((target.chat_id, target.message_thread_id, text.to_owned()));
         Ok(())
     }
+}
+
+#[async_trait(?Send)]
+impl TelegramRequester for ThreadThenChatFailRequester {
+    async fn send_text(
+        &self,
+        target: &ReplyTarget,
+        _text: &str,
+    ) -> Result<(), TelegramRequestError> {
+        if target.message_thread_id.is_some() {
+            Err(TelegramRequestError::new("thread send boom"))
+        } else {
+            Err(TelegramRequestError::new("chat send boom"))
+        }
+    }
+}
+
+#[test]
+fn returns_request_error_when_thread_fallback_also_fails() {
+    let requester = ThreadThenChatFailRequester;
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("done transcript".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: Some(900),
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Topic {
+                chat_id: -1001293752024,
+                topic_id: 900,
+            },
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let err = run_ready(complete_runtime_outcome(&requester, &executor, outcome))
+        .expect_err("fallback chain should fail");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: chat send boom")
+    );
 }
 
 #[test]
