@@ -19,8 +19,8 @@ pub fn extract_text_message(update: &Update) -> Option<IncomingTextMessage> {
         UpdateKind::Message(message) => message,
         _ => return None,
     };
-    let text = message_text(message)?;
-    if text.trim().is_empty() {
+    let text = message_text(message)?.trim();
+    if text.is_empty() {
         return None;
     }
     Some(IncomingTextMessage {
@@ -201,6 +201,46 @@ mod tests {
         let incoming = extract_text_message(&update).expect("caption extracted");
         assert_eq!(incoming.text, "caption prompt");
         assert_eq!(incoming.envelope.message_thread_id, Some(134545));
+    }
+
+    #[test]
+    fn trims_caption_before_returning_text() {
+        let update = parse_update(
+            r#"{
+                "message": {
+                    "chat": {
+                        "id": -1001293752024,
+                        "title": "CryptoInside Chat",
+                        "type": "supergroup",
+                        "username": "cryptoinside_talk",
+                        "is_forum": true
+                    },
+                    "date": 1721592580,
+                    "from": {
+                        "first_name": "the Cable Guy",
+                        "id": 5964236329,
+                        "is_bot": false,
+                        "language_code":"en",
+                        "username": "spacewhaleblues"
+                    },
+                    "message_id": 134550,
+                    "message_thread_id": 134545,
+                    "caption": "   continue parser work   ",
+                    "photo": [
+                        {
+                            "file_id": "id",
+                            "file_unique_id": "uq",
+                            "width": 1,
+                            "height": 1
+                        }
+                    ]
+                },
+                "update_id": 439432604
+            }"#,
+        );
+
+        let incoming = extract_text_message(&update).expect("caption extracted");
+        assert_eq!(incoming.text, "continue parser work");
     }
 
     #[test]
