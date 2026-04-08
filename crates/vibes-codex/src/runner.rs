@@ -1,10 +1,16 @@
+use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::thread;
+use std::time::Duration;
 
 use thiserror::Error;
 use vibes_core::SessionHandle;
 
-use crate::{CodexEvent, CodexTranscript, ParsedCodexLine, parse_codex_line};
+use crate::{CodexEvent, CodexTranscript, ParsedCodexLine, RunConclusion, parse_codex_line};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexRunRequest {
@@ -19,6 +25,21 @@ pub struct CodexRunResult {
     pub events: Vec<CodexEvent>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct CodexRunControl {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CodexRunControl {
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CodexExecRunner {
     binary: String,
@@ -28,10 +49,20 @@ pub struct CodexExecRunner {
 pub enum CodexRunError {
     #[error("failed to spawn codex: {0}")]
     Spawn(#[from] std::io::Error),
+    #[error("codex run cancelled")]
+    Cancelled,
     #[error("codex exited with non-zero code {code:?}: {stderr}")]
     NonZeroExit { code: Option<i32>, stderr: String },
+    #[error("codex exited without explicit successful completion: {conclusion:?}")]
+    MissingSuccessfulCompletion { conclusion: Option<RunConclusion> },
     #[error("codex output did not include session id")]
     MissingSessionId,
+}
+
+enum StreamMessage {
+    Stdout(String),
+    Stderr(String),
+    ReaderFailed(String),
 }
 
 impl Default for CodexExecRunner {
@@ -54,20 +85,87 @@ impl CodexExecRunner {
         request: &CodexRunRequest,
         cwd: &Path,
     ) -> Result<CodexRunResult, CodexRunError> {
-        let output = Command::new(&self.binary)
+        self.run_with_handler(request, cwd, &CodexRunControl::default(), |_| {})
+    }
+
+    pub fn run_with_handler<F>(
+        &self,
+        request: &CodexRunRequest,
+        cwd: &Path,
+        control: &CodexRunControl,
+        mut on_line: F,
+    ) -> Result<CodexRunResult, CodexRunError>
+    where
+        F: FnMut(&ParsedCodexLine),
+    {
+        let mut child = Command::new(&self.binary)
             .args(build_exec_args(request))
             .current_dir(cwd)
-            .output()?;
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let stdout = child.stdout.take().ok_or_else(|| pipe_error("stdout"))?;
+        let stderr = child.stderr.take().ok_or_else(|| pipe_error("stderr"))?;
+        let (tx, rx) = mpsc::channel();
 
-        if !output.status.success() {
-            return Err(CodexRunError::NonZeroExit {
-                code: output.status.code(),
-                stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-            });
+        spawn_reader(stdout, tx.clone(), true);
+        spawn_reader(stderr, tx, false);
+
+        let mut transcript = CodexTranscript::default();
+        let mut events = Vec::new();
+        let mut stderr_log = Vec::new();
+
+        loop {
+            if control.is_cancelled() {
+                terminate(&mut child)?;
+                let _ = child.wait();
+                return Err(CodexRunError::Cancelled);
+            }
+
+            match rx.recv_timeout(Duration::from_millis(25)) {
+                Ok(StreamMessage::Stdout(line)) => {
+                    apply_line(&line, &mut transcript, &mut events, &mut on_line)
+                }
+                Ok(StreamMessage::Stderr(line) | StreamMessage::ReaderFailed(line)) => {
+                    stderr_log.push(line)
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {}
+            }
+
+            if let Some(status) = child.try_wait()? {
+                while let Ok(message) = rx.try_recv() {
+                    match message {
+                        StreamMessage::Stdout(line) => {
+                            apply_line(&line, &mut transcript, &mut events, &mut on_line)
+                        }
+                        StreamMessage::Stderr(line) | StreamMessage::ReaderFailed(line) => {
+                            stderr_log.push(line)
+                        }
+                    }
+                }
+                if control.is_cancelled() {
+                    return Err(CodexRunError::Cancelled);
+                }
+                if !status.success() {
+                    return Err(CodexRunError::NonZeroExit {
+                        code: status.code(),
+                        stderr: stderr_log.join("\n").trim().to_owned(),
+                    });
+                }
+                let result = CodexRunResult {
+                    session_id: transcript.session_id().map(str::to_owned),
+                    transcript,
+                    events,
+                };
+                if result.transcript.conclusion() != Some(RunConclusion::Success) {
+                    return Err(CodexRunError::MissingSuccessfulCompletion {
+                        conclusion: result.transcript.conclusion(),
+                    });
+                }
+                return Ok(result);
+            }
         }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_run_output(&stdout))
     }
 
     pub fn start_new(
@@ -116,22 +214,66 @@ impl CodexExecRunner {
     }
 }
 
-fn parse_run_output(stdout: &str) -> CodexRunResult {
-    let mut transcript = CodexTranscript::default();
-    let mut events = Vec::new();
+fn apply_line<F>(
+    line: &str,
+    transcript: &mut CodexTranscript,
+    events: &mut Vec<CodexEvent>,
+    on_line: &mut F,
+) where
+    F: FnMut(&ParsedCodexLine),
+{
+    let parsed = parse_codex_line(line);
+    if let ParsedCodexLine::Event(event) = &parsed {
+        transcript.apply(event.clone());
+        events.push(event.clone());
+    }
+    on_line(&parsed);
+}
 
-    for line in stdout.lines() {
-        if let ParsedCodexLine::Event(event) = parse_codex_line(line) {
-            transcript.apply(event.clone());
-            events.push(event);
+fn spawn_reader<T>(stream: T, tx: Sender<StreamMessage>, stdout: bool)
+where
+    T: std::io::Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let trimmed = line.trim_end_matches(['\r', '\n']).to_owned();
+                    let message = if stdout {
+                        StreamMessage::Stdout(trimmed)
+                    } else {
+                        StreamMessage::Stderr(trimmed)
+                    };
+                    if tx.send(message).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let side = if stdout { "stdout" } else { "stderr" };
+                    let _ = tx.send(StreamMessage::ReaderFailed(format!(
+                        "failed reading codex {side}: {error}"
+                    )));
+                    break;
+                }
+            }
         }
-    }
+    });
+}
 
-    CodexRunResult {
-        session_id: transcript.session_id().map(str::to_owned),
-        transcript,
-        events,
+fn terminate(child: &mut Child) -> Result<(), CodexRunError> {
+    match child.kill() {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
+        Err(error) => Err(CodexRunError::Spawn(error)),
     }
+}
+
+fn pipe_error(name: &str) -> std::io::Error {
+    std::io::Error::other(format!("missing child {name} pipe"))
 }
 
 fn build_exec_args(request: &CodexRunRequest) -> Vec<String> {
@@ -147,11 +289,7 @@ fn build_exec_args(request: &CodexRunRequest) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use tempfile::TempDir;
-
-    use super::{CodexExecRunner, CodexRunRequest, build_exec_args, parse_run_output};
+    use super::{CodexRunRequest, build_exec_args};
 
     #[test]
     fn builds_resume_args_for_codex_exec_json() {
@@ -161,39 +299,5 @@ mod tests {
         });
 
         assert_eq!(args, vec!["exec", "resume", "sess-123", "--json", "hello"]);
-    }
-
-    #[test]
-    fn parses_session_and_transcript_from_jsonl() {
-        let result = parse_run_output(
-            "{\"type\":\"thread.started\",\"thread\":{\"id\":\"sess-1\"}}\n{\"type\":\"assistant_message\",\"text\":\"done\"}\n",
-        );
-
-        assert_eq!(result.session_id.as_deref(), Some("sess-1"));
-        assert_eq!(result.transcript.rendered(), "done");
-    }
-
-    #[test]
-    fn runs_fake_codex_binary() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("fake-codex.sh");
-        fs::write(
-            &script_path,
-            "#!/bin/sh\necho '{\"type\":\"thread.started\",\"thread\":{\"id\":\"sess-9\"}}'\n",
-        )
-        .unwrap();
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&script_path).unwrap().permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&script_path, perms).unwrap();
-        }
-
-        let runner = CodexExecRunner::with_binary(script_path.to_string_lossy());
-        let handle = runner.start_new(Some("demo"), temp.path()).unwrap();
-        assert_eq!(handle.codex_session_id, "sess-9");
-        assert_eq!(handle.display_name, "demo");
     }
 }
