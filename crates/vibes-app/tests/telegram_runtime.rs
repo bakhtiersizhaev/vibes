@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use teloxide::types::Update;
 use vibes_app::{
     AppController, AppService, AppServiceError, RuntimeOutcome, SessionRuntime,
-    TelegramRequestError, TelegramRequester, TopicManager, run_telegram_update,
+    TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError, TelegramRequester,
+    TopicManager, complete_runtime_outcome, run_telegram_update,
 };
 use vibes_core::{SessionBindingWriter, SessionHandle};
 use vibes_store::InMemoryBindingStore;
@@ -51,6 +52,11 @@ struct FakeRequester {
     sent: Mutex<Vec<(i64, Option<i64>, String)>>,
 }
 
+#[derive(Debug)]
+struct FakeExecutor {
+    response: Mutex<Result<String, String>>,
+}
+
 #[async_trait(?Send)]
 impl TelegramRequester for FakeRequester {
     async fn send_text(
@@ -63,6 +69,20 @@ impl TelegramRequester for FakeRequester {
             .expect("fake requester lock poisoned")
             .push((target.chat_id, target.message_thread_id, text.to_owned()));
         Ok(())
+    }
+}
+
+impl TelegramPromptExecutor for FakeExecutor {
+    fn execute_prompt(
+        &self,
+        _binding: &vibes_core::SessionBinding,
+        _prompt: &str,
+    ) -> Result<String, TelegramExecutionError> {
+        self.response
+            .lock()
+            .expect("fake executor lock poisoned")
+            .clone()
+            .map_err(TelegramExecutionError::new)
     }
 }
 
@@ -275,6 +295,88 @@ fn sends_resume_reply_into_existing_topic_thread() {
     assert_eq!(sent[0].1, Some(900));
     assert!(sent[0].2.contains("resumed") || sent[0].2.contains("019d6361"));
     assert!(sent[0].2.contains("topic 900"));
+}
+
+#[test]
+fn prompt_ready_executes_and_sends_transcript_reply() {
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("done transcript".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: None,
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Direct(408258968),
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("execution ok");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(text, "done transcript");
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(
+        sent.as_slice(),
+        &[(408258968, None, "done transcript".to_owned())]
+    );
+}
+
+#[test]
+fn prompt_execution_failure_is_sent_as_reply_text() {
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Err("boom".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: Some(900),
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Topic {
+                chat_id: -1001293752024,
+                topic_id: 900,
+            },
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("execution ok");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert!(text.contains("Codex execution failed: telegram execution failed: boom"));
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, 408258968);
+    assert_eq!(sent[0].1, Some(900));
+    assert!(
+        sent[0]
+            .2
+            .contains("Codex execution failed: telegram execution failed: boom")
+    );
 }
 
 #[test]

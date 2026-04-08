@@ -19,6 +19,8 @@ pub enum TelegramRuntimeError {
     Handle(#[from] HandleMessageError),
     #[error(transparent)]
     Request(#[from] TelegramRequestError),
+    #[error(transparent)]
+    Execute(#[from] TelegramExecutionError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -29,6 +31,20 @@ pub struct TelegramRequestError {
 
 impl TelegramRequestError {
     fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("telegram execution failed: {message}")]
+pub struct TelegramExecutionError {
+    message: String,
+}
+
+impl TelegramExecutionError {
+    pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }
@@ -53,6 +69,14 @@ pub enum RuntimeOutcome {
 pub trait TelegramRequester: Send + Sync {
     async fn send_text(&self, target: &ReplyTarget, text: &str)
     -> Result<(), TelegramRequestError>;
+}
+
+pub trait TelegramPromptExecutor: Send + Sync {
+    fn execute_prompt(
+        &self,
+        binding: &SessionBinding,
+        prompt: &str,
+    ) -> Result<String, TelegramExecutionError>;
 }
 
 #[async_trait(?Send)]
@@ -110,5 +134,35 @@ where
             binding,
             prompt,
         }),
+    }
+}
+
+pub async fn complete_runtime_outcome<Q, E>(
+    requester: &Q,
+    executor: &E,
+    outcome: RuntimeOutcome,
+) -> Result<RuntimeOutcome, TelegramRuntimeError>
+where
+    Q: TelegramRequester,
+    E: TelegramPromptExecutor,
+{
+    match outcome {
+        RuntimeOutcome::Ignored => Ok(RuntimeOutcome::Ignored),
+        RuntimeOutcome::Replied { target, text } => {
+            requester.send_text(&target, &text).await?;
+            Ok(RuntimeOutcome::Replied { target, text })
+        }
+        RuntimeOutcome::PromptReady {
+            target,
+            binding,
+            prompt,
+        } => {
+            let text = match executor.execute_prompt(&binding, &prompt) {
+                Ok(text) => text,
+                Err(err) => format!("Codex execution failed: {err}"),
+            };
+            requester.send_text(&target, &text).await?;
+            Ok(RuntimeOutcome::Replied { target, text })
+        }
     }
 }

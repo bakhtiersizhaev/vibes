@@ -15,7 +15,7 @@ pub use service::{
     AppService, AppServiceError, BindOutcome, SessionRuntime, StartNewSessionInput, TopicManager,
 };
 pub use telegram_runtime::{
-    RuntimeOutcome, TelegramRequestError, TelegramRequester, TelegramRuntimeError,
-    run_telegram_update,
+    RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError,
+    TelegramRequester, TelegramRuntimeError, complete_runtime_outcome, run_telegram_update,
 };
 pub use update_ingest::{TelegramUpdateAction, handle_telegram_update};

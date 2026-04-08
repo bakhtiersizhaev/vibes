@@ -2,20 +2,19 @@ use std::env;
 
 use anyhow::Context;
 use teloxide::{
-    payloads::SendMessageSetters,
     prelude::{Bot, Request, Requester},
-    types::{ChatId, MessageId, ThreadId},
+    types::ChatId,
     update_listeners::{self, AsUpdateStream},
 };
 use tokio::pin;
 use tokio_stream::StreamExt;
 use tracing::{error, info};
 use vibes_app::{
-    AppController, AppService, AppServiceError, RuntimeOutcome, TopicManager, run_telegram_update,
+    AppController, AppService, AppServiceError, RuntimeOutcome, TelegramExecutionError,
+    TelegramPromptExecutor, TopicManager, complete_runtime_outcome, run_telegram_update,
 };
 use vibes_codex::{CodexExecRunner, CodexRunRequest};
 use vibes_store::SqliteBindingStore;
-use vibes_telegram::ReplyTarget;
 
 struct BotTopicManager {
     bot: Bot,
@@ -36,35 +35,34 @@ impl TopicManager for BotTopicManager {
     }
 }
 
-async fn send_text(bot: &Bot, target: &ReplyTarget, text: String) -> anyhow::Result<()> {
-    let mut request = bot.send_message(ChatId(target.chat_id), text);
-    if let Some(thread_id) = target.message_thread_id {
-        request = request.message_thread_id(ThreadId(MessageId(thread_id as i32)));
-    }
-    request.send().await.context("send_message failed")?;
-    Ok(())
+struct CodexPromptExecutor<'a> {
+    runner: &'a CodexExecRunner,
 }
 
-fn execute_prompt(
-    runner: &CodexExecRunner,
-    session_id: &str,
-    prompt: &str,
-    workspace_root: &str,
-) -> anyhow::Result<String> {
-    let result = runner
-        .run(
-            &CodexRunRequest {
-                prompt: prompt.to_owned(),
-                resume_target: Some(session_id.to_owned()),
-            },
-            std::path::Path::new(workspace_root),
-        )
-        .context("codex prompt execution failed")?;
-    let rendered = result.transcript.rendered();
-    if rendered.trim().is_empty() {
-        Ok("Codex run completed with no transcript output.".to_owned())
-    } else {
-        Ok(rendered)
+impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
+    fn execute_prompt(
+        &self,
+        binding: &vibes_core::SessionBinding,
+        prompt: &str,
+    ) -> Result<String, TelegramExecutionError> {
+        let result = self
+            .runner
+            .run(
+                &CodexRunRequest {
+                    prompt: prompt.to_owned(),
+                    resume_target: Some(binding.session.codex_session_id.clone()),
+                },
+                std::path::Path::new(&binding.workspace_root),
+            )
+            .map_err(|err| {
+                TelegramExecutionError::new(format!("codex prompt execution failed: {err}"))
+            })?;
+        let rendered = result.transcript.rendered();
+        if rendered.trim().is_empty() {
+            Ok("Codex run completed with no transcript output.".to_owned())
+        } else {
+            Ok(rendered)
+        }
     }
 }
 
@@ -90,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
     let runtime = CodexExecRunner::default();
     let topics = BotTopicManager { bot: bot.clone() };
     let controller = AppController::new(AppService::new(store, runtime.clone(), topics));
+    let executor = CodexPromptExecutor { runner: &runtime };
 
     let mut listener = update_listeners::polling_default(bot.clone()).await;
     let stream = listener.as_stream();
@@ -129,17 +128,30 @@ async fn main() -> anyhow::Result<()> {
                         prompt_len = prompt.len(),
                         "prompt ready for codex execution"
                     );
-                    let reply = match execute_prompt(
-                        &runtime,
-                        &binding.session.codex_session_id,
-                        &prompt,
-                        &binding.workspace_root,
-                    ) {
-                        Ok(text) => text,
-                        Err(err) => format!("Codex execution failed: {err}"),
-                    };
-                    if let Err(err) = send_text(&bot, &target, reply).await {
-                        error!(error = %err, "failed to send codex execution reply");
+                    match complete_runtime_outcome(
+                        &bot,
+                        &executor,
+                        RuntimeOutcome::PromptReady {
+                            target,
+                            binding,
+                            prompt,
+                        },
+                    )
+                    .await
+                    {
+                        Ok(RuntimeOutcome::Replied { target, .. }) => {
+                            info!(
+                                chat_id = target.chat_id,
+                                thread_id = target.message_thread_id,
+                                "codex execution reply sent"
+                            );
+                        }
+                        Ok(other) => {
+                            info!(outcome = ?other, "unexpected runtime completion outcome");
+                        }
+                        Err(err) => {
+                            error!(error = %err, "failed to complete codex execution outcome");
+                        }
                     }
                 }
                 Err(err) => {
