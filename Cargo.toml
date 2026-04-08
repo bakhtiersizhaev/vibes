@@ -1,0 +1,33 @@
+[workspace]
+members = [
+  "crates/vibes-app",
+  "crates/vibes-core",
+  "crates/vibes-telegram",
+  "crates/vibes-codex",
+  "crates/vibes-store",
+  "crates/vibes-testkit",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.92"
+license = "Apache-2.0"
+authors = ["Bakhtier Sizhaev", "Popus"]
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+clap = { version = "4.5", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros", "migrate", "uuid", "json", "time"] }
+teloxide = "0.17"
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+uuid = { version = "1", features = ["serde", "v7"] }
