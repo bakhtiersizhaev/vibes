@@ -58,6 +58,27 @@ def safe_resolve_path(raw: str) -> Tuple[Optional[Path], str]:
         return None, f"Failed to resolve path: {raw_s!r} ({e})"
 
 
+def default_projects_root() -> Path:
+    raw = os.environ.get("VIBES_DEFAULT_PROJECTS_DIR", "").strip()
+    if raw:
+        try:
+            path = Path(raw).expanduser()
+        except Exception:
+            return (Path.home() / "Documents").expanduser()
+        try:
+            return path.resolve()
+        except Exception:
+            return path
+    return (Path.home() / "Documents").expanduser()
+
+
+def is_simple_folder_name(raw: str) -> bool:
+    value = (raw or "").strip()
+    if not value or value in {".", ".."}:
+        return False
+    return "/" not in value and "\\" not in value
+
+
 def shorten_path(path: str, *, max_len: int = 34) -> str:
     p = path.strip()
     if len(p) <= max_len:

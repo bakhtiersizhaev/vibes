@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from ..constants import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, LABEL_BACK
+from ..constants import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, ENGINE_CLAUDE, ENGINE_CODEX, LABEL_BACK
+from ..core.claude_cmd import claude_model_default
 from ..core.codex_cmd import MODEL_PRESETS
 from ..core.session_models import SessionRecord
 from ..telegram_deps import InlineKeyboardButton, InlineKeyboardMarkup
@@ -21,11 +22,20 @@ def _render_model(rec: SessionRecord, *, notice: Optional[str] = None) -> Tuple[
         _render_session_compact_info(rec),
         "",
         f"Model: <code>{_h(current)}</code>",
+    ]
+    rows: List[List[InlineKeyboardButton]] = []
+
+    if rec.engine == ENGINE_CLAUDE:
+        lines += ["", "Claude uses model ids; use 📝 to set a custom model."]
+        rows.append([InlineKeyboardButton("📝", callback_data=_cb("model_custom"))])
+        rows.append([InlineKeyboardButton(LABEL_BACK, callback_data=_cb("back"))])
+        return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+    lines += [
         f"Reasoning effort: <code>{_h(reasoning_effort)}</code>",
         "",
         "Pick overrides below.",
     ]
-    rows: List[List[InlineKeyboardButton]] = []
 
     def _mark(label: str, selected: bool) -> str:
         return f"✅ {label}" if selected else label
@@ -62,7 +72,7 @@ def _render_model(rec: SessionRecord, *, notice: Optional[str] = None) -> Tuple[
 
 def _render_model_custom(rec: SessionRecord, *, notice: Optional[str] = None) -> Tuple[str, InlineKeyboardMarkup]:
     notice_html = f"<i>{_h(notice)}</i>\n\n" if notice else ""
-    example = MODEL_PRESETS[0] if MODEL_PRESETS else "o3"
+    example = claude_model_default() if rec.engine == ENGINE_CLAUDE else MODEL_PRESETS[0] if MODEL_PRESETS else "o3"
     text_html = (
         f"{notice_html}"
         "<b>Custom model</b>\n\n"
@@ -77,6 +87,7 @@ def _render_await_prompt(
     session_name: str,
     *,
     run_mode: str,
+    engine: Optional[str] = None,
     model: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     path: Optional[str] = None,
@@ -84,14 +95,19 @@ def _render_await_prompt(
 ) -> Tuple[str, InlineKeyboardMarkup]:
     mode_label = "continue (resume)" if run_mode == "continue" else "new prompt"
     notice_html = f"<i>{_h(notice)}</i>\n\n" if notice else ""
-    model_label = model or DEFAULT_MODEL
+    engine_label = engine or ENGINE_CODEX
+    model_label = model or (claude_model_default() if engine_label == ENGINE_CLAUDE else DEFAULT_MODEL)
     reasoning_label = reasoning_effort or DEFAULT_REASONING_EFFORT
     path_label = path or ""
     path_line = f"<code>{_h(path_label)}</code>\n" if path_label else ""
+    engine_line = f"<code>{_h(engine_label)}</code>\n"
+    reasoning_line = f"<code>{_h(reasoning_label)}</code>\n" if engine_label != ENGINE_CLAUDE else ""
     text_html = (
         f"{notice_html}"
         f"<b>Session:</b> <code>{_h(session_name)}</code>\n"
-        f"<code>{_h(model_label)}</code> <code>{_h(reasoning_label)}</code>\n"
+        f"{engine_line}"
+        f"<code>{_h(model_label)}</code>\n"
+        f"{reasoning_line}"
         f"{path_line}\n"
         "Напиши промт сообщением.\n\n"
         f"<i>Режим:</i> {_h(mode_label)}"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from ..constants import ENGINE_CHOICES, ENGINE_CLAUDE, ENGINE_CODEX
 from ..constants import CB_PREFIX
 from ..core.codex_cmd import MODEL_PRESETS
 from ..telegram_deps import ContextTypes, TelegramError, Update
@@ -161,15 +162,40 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             _ui_set(context.chat_data, mode="new_name", notice="Auto-name is taken. Pick another.")
             await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
         else:
-            _ui_nav_to(context.chat_data, mode="new_path", new={"name": auto_name})
+            _ui_nav_to(context.chat_data, mode="new_engine", new={"name": auto_name})
+            await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
+    elif action == "engine":
+        engine_val = (arg or "").strip()
+        if engine_val not in ENGINE_CHOICES:
+            _ui_set(context.chat_data, mode="new_engine", notice="Pick an engine.")
+            await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
+        else:
+            draft = ui.get("new") if isinstance(ui.get("new"), dict) else {}
+            draft["engine"] = engine_val
+            _ui_nav_to(context.chat_data, mode="new_path", new=draft)
+            await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
+    elif action == "path_mode":
+        mode_val = (arg or "").strip()
+        if mode_val not in {"docs", "full", "reset"}:
+            _ui_set(context.chat_data, mode="new_path", notice="Choose one of the options below.")
+            await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
+        else:
+            draft = ui.get("new") if isinstance(ui.get("new"), dict) else {}
+            if mode_val == "reset":
+                draft.pop("path_mode", None)
+            else:
+                draft["path_mode"] = mode_val
+            _ui_nav_to(context.chat_data, mode="new_path", new=draft)
             await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
     elif action == "path_pick":
         draft = ui.get("new")
         name = draft.get("name") if isinstance(draft, dict) else None
+        engine = draft.get("engine") if isinstance(draft, dict) else None
         if not isinstance(name, str) or not name:
             _ui_set(context.chat_data, mode="new_name", notice="Missing draft name. Start again.")
             await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
         else:
+            engine_val = engine if isinstance(engine, str) and engine in ENGINE_CHOICES else ENGINE_CODEX
             try:
                 idx = int(arg or "-1")
             except Exception:
@@ -187,7 +213,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     _ui_set(context.chat_data, mode="new_path", notice="Папка не найдена.", notice_code=str(resolved_p))
                     await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
                 else:
-                    rec, err = await manager.create_session(name=name, path=str(resolved_p))
+                    rec, err = await manager.create_session(name=name, path=str(resolved_p), engine=engine_val)
                     if err:
                         _ui_set(context.chat_data, mode="new_path", notice=err, new={"name": name})
                         await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
@@ -268,6 +294,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             _ui_set(context.chat_data, mode="sessions", notice="No session selected.")
             await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
         else:
+            if rec2.engine == ENGINE_CLAUDE:
+                _ui_set(context.chat_data, mode="model", notice="Model presets are not available for Claude.")
+                await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
+                return
             try:
                 idx = int(arg or "-1")
             except Exception:
@@ -286,6 +316,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             _ui_set(context.chat_data, mode="sessions", notice="No session selected.")
             await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
         else:
+            if rec_v2.engine == ENGINE_CLAUDE:
+                _ui_set(context.chat_data, mode="model", notice="Reasoning effort is not used for Claude.")
+                await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
+                return
             level = (arg or "").strip()
             if level not in {"low", "medium", "high", "xhigh"}:
                 _ui_set(context.chat_data, mode="model", notice="Invalid reasoning effort.")
@@ -351,12 +385,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if flow == "new_path":
             draft = ui.get("new")
             name = draft.get("name") if isinstance(draft, dict) else None
+            engine = draft.get("engine") if isinstance(draft, dict) else None
             if not isinstance(name, str) or not name:
                 ui.pop("mkdir", None)
                 _ui_set(context.chat_data, mode="new_name", notice="Missing draft name. Start again.")
                 await _render_and_sync(manager, panel, context=context, chat_id=chat_id)
                 return
-            rec, err = await manager.create_session(name=name, path=path)
+            engine_val = engine if isinstance(engine, str) and engine in ENGINE_CHOICES else ENGINE_CODEX
+            rec, err = await manager.create_session(name=name, path=path, engine=engine_val)
             if err:
                 _ui_set(context.chat_data, mode="new_path", notice=err, new={"name": name})
                 ui.pop("mkdir", None)

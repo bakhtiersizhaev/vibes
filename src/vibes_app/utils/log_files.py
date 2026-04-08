@@ -19,6 +19,46 @@ from ..core.codex_events import (
 from .text import truncate_text
 
 
+def _extract_claude_text_delta(obj: dict) -> Optional[str]:
+    if obj.get("type") != "stream_event":
+        return None
+    event = obj.get("event")
+    if not isinstance(event, dict) or event.get("type") != "content_block_delta":
+        return None
+    delta = event.get("delta")
+    if not isinstance(delta, dict):
+        return None
+    text = delta.get("text")
+    return text if isinstance(text, str) and text else None
+
+
+def _extract_claude_assistant_text(obj: dict) -> Optional[str]:
+    if obj.get("type") != "assistant":
+        return None
+    message = obj.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+
+    parts: List[str] = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        text = block.get("text")
+        if isinstance(text, str) and text:
+            parts.append(text)
+    return "".join(parts) if parts else None
+
+
+def _extract_claude_result_text(obj: dict) -> Optional[str]:
+    if obj.get("type") != "result":
+        return None
+    result = obj.get("result")
+    return result if isinstance(result, str) and result.strip() else None
+
+
 def tail_text_file(path: Path, *, max_bytes: int = UI_TAIL_MAX_BYTES) -> str:
     if not path.exists() or not path.is_file():
         return ""
@@ -52,6 +92,9 @@ def extract_last_agent_message_from_stdout_log(path: Optional[str], *, max_chars
             continue
         if not isinstance(obj, dict):
             continue
+        claude_text = _extract_claude_assistant_text(obj) or _extract_claude_result_text(obj)
+        if claude_text:
+            return truncate_text(claude_text.strip(), max_chars)
         event_type = get_event_type(obj)
         if event_type in {"agent_message", "assistant_message"}:
             text = obj.get("text")
@@ -78,6 +121,7 @@ def preview_from_stdout_log(path: Optional[str], *, max_chars: int = UI_PREVIEW_
 
     pieces: List[str] = []
     last_cmd: Optional[str] = None
+    saw_claude_delta = False
     for line in raw.splitlines()[-250:]:
         s = line.strip()
         if not s:
@@ -90,6 +134,22 @@ def preview_from_stdout_log(path: Optional[str], *, max_chars: int = UI_PREVIEW_
         if not isinstance(obj, dict):
             pieces.append(line)
             continue
+
+        delta = _extract_claude_text_delta(obj)
+        if delta:
+            pieces.append(delta)
+            saw_claude_delta = True
+            continue
+
+        if not saw_claude_delta:
+            claude_msg = _extract_claude_assistant_text(obj)
+            if claude_msg:
+                pieces.append("\n" + claude_msg + "\n")
+                continue
+            claude_result = _extract_claude_result_text(obj)
+            if claude_result:
+                pieces.append("\n" + claude_result + "\n")
+                continue
 
         event_type = get_event_type(obj)
         if event_type.startswith("item."):

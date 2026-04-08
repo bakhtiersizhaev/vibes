@@ -65,6 +65,13 @@ def cmd_init(root: Path, env_path: Path, *, force: bool) -> int:
         "# Allowed: untrusted | on-failure | on-request | never\n"
         "# VIBES_CODEX_APPROVAL_POLICY=never\n"
         "\n"
+        "# Claude Code settings (optional)\n"
+        "# VIBES_CLAUDE_MODEL=sonnet\n"
+        "# VIBES_CLAUDE_PERMISSION_MODE=bypassPermissions\n"
+        "\n"
+        "# Optional: default projects root for the Documents-style wizard mode\n"
+        "# VIBES_DEFAULT_PROJECTS_DIR=~/Documents\n"
+        "\n"
         "# Optional: python interpreter for the bot\n"
         f"# VIBES_PYTHON={(root / '.venv' / 'bin' / 'python')}\n"
     )

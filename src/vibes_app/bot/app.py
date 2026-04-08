@@ -92,7 +92,7 @@ async def run_bot(*, token: str, admin_id: Optional[int]) -> None:
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Telegram bot: local session manager for Codex CLI")
+    p = argparse.ArgumentParser(description="Telegram bot: local session manager for Codex CLI and Claude Code")
     p.add_argument("--token", default=None, help="Telegram bot token (or env VIBES_TOKEN/TELEGRAM_BOT_TOKEN)")
     p.add_argument("--admin", type=int, default=None, help="Allowed Telegram user_id (or env VIBES_ADMIN_ID)")
     return p.parse_args(argv)

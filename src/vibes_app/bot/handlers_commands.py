@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..constants import ENGINE_CODEX
 from ..telegram_deps import ContextTypes, Update
 from ..utils.logging import log_error
 from ..utils.text import parse_tokens as _parse_tokens
@@ -165,7 +166,7 @@ async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if len(tokens) >= 3:
         name = tokens[1]
         path = tokens[2]
-        rec, err = await env.manager.create_session(name=name, path=path)
+        rec, err = await env.manager.create_session(name=name, path=path, engine=ENGINE_CODEX)
         if err:
             _ui_set(context.chat_data, mode="new_name", notice=err)
             await _render_and_sync(env.manager, env.panel, context=context, chat_id=env.chat_id)

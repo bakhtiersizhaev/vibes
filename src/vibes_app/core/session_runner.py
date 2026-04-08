@@ -8,7 +8,7 @@ from typing import Any, Deque
 
 from ..bot.callbacks import cb as _cb
 from ..bot.ui_render_session import _render_session_view
-from ..constants import RUN_START_WAIT_NOTE, STDERR_TAIL_LINES
+from ..constants import ENGINE_CHOICES, ENGINE_CLAUDE, ENGINE_CODEX, RUN_START_WAIT_NOTE, STDERR_TAIL_LINES
 from ..telegram_deps import InlineKeyboardButton, InlineKeyboardMarkup
 from ..utils.logging import log_error, utc_now_iso
 from ..utils.text import h as _h
@@ -85,7 +85,13 @@ async def run_prompt(
         reply_markup=running_kb,
     )
 
-    cmd = manager._build_codex_cmd(rec, prompt=prompt, run_mode=run_mode)
+    engine = rec.engine if rec.engine in ENGINE_CHOICES else ENGINE_CODEX
+    if engine == ENGINE_CLAUDE:
+        cmd = manager._build_claude_cmd(rec, prompt=prompt, run_mode=run_mode)
+        run_cwd: str | None = rec.path
+    else:
+        cmd = manager._build_codex_cmd(rec, prompt=prompt, run_mode=run_mode)
+        run_cwd = None
 
     async def _handle_start_failure(*, stderr_text: str) -> None:
         try:
@@ -114,12 +120,14 @@ async def run_prompt(
             log_error("Failed to render start failure panel.", e, log_path=manager.bot_log_path)
 
     try:
-        process = await manager._spawn_process(cmd)
+        process = await manager._spawn_process(cmd, cwd=run_cwd)
     except FileNotFoundError:
-        await _handle_start_failure(stderr_text="`codex` not found in PATH.\n")
+        missing = "`claude`" if engine == ENGINE_CLAUDE else "`codex`"
+        await _handle_start_failure(stderr_text=f"{missing} not found in PATH.\n")
         return
     except Exception as e:
-        await _handle_start_failure(stderr_text=f"Failed to start Codex: {e}\n")
+        cli_name = "Claude" if engine == ENGINE_CLAUDE else "Codex"
+        await _handle_start_failure(stderr_text=f"Failed to start {cli_name}: {e}\n")
         return
 
     stderr_tail: Deque[str] = deque(maxlen=STDERR_TAIL_LINES)

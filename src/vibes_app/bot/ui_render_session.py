@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Optional, Tuple
 
-from ..constants import LABEL_BACK, MAX_TELEGRAM_CHARS, RUN_START_WAIT_NOTE
+from ..constants import ENGINE_CLAUDE, LABEL_BACK, MAX_TELEGRAM_CHARS, RUN_START_WAIT_NOTE
 from ..core.session_models import SessionRecord
 from ..telegram_deps import InlineKeyboardButton, InlineKeyboardMarkup
 from ..utils.log_files import (
@@ -21,7 +21,9 @@ from .ui_run import _is_running
 
 
 def _render_session_compact_info(rec: SessionRecord) -> str:
-    return f"<code>{_h(rec.model)}</code> <code>{_h(rec.reasoning_effort)}</code>\n<code>{_h(rec.path)}</code>"
+    if rec.engine == ENGINE_CLAUDE:
+        return f"<code>{_h(rec.engine)}</code> <code>{_h(rec.model)}</code>\n<code>{_h(rec.path)}</code>"
+    return f"<code>{_h(rec.engine)}</code> <code>{_h(rec.model)}</code> <code>{_h(rec.reasoning_effort)}</code>\n<code>{_h(rec.path)}</code>"
 
 
 def _render_session_view(

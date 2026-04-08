@@ -9,12 +9,19 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..constants import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, STATE_VERSION
+from ..constants import (
+    DEFAULT_MODEL,
+    DEFAULT_REASONING_EFFORT,
+    ENGINE_CHOICES,
+    ENGINE_CLAUDE,
+    ENGINE_CODEX,
+    STATE_VERSION,
+)
 from ..telegram.panel import PanelUI
 from ..telegram.stream import TelegramStream
 from ..utils.logging import utc_now_iso
 from ..utils.paths import safe_resolve_path, safe_session_name
-from . import codex_cmd, state_store
+from . import claude_cmd, codex_cmd, state_store
 from .process_io import handle_json_event as _handle_json_event_impl
 from .process_io import read_stderr as _read_stderr_impl
 from .process_io import read_stdout as _read_stdout_impl
@@ -143,16 +150,23 @@ class SessionManager:
                 path = payload.get("path")
                 if not isinstance(path, str) or not path:
                     continue
+                engine_val = payload.get("engine")
+                if not isinstance(engine_val, str) or engine_val not in ENGINE_CHOICES:
+                    engine_val = ENGINE_CODEX
+                default_model = claude_cmd.claude_model_default() if engine_val == ENGINE_CLAUDE else DEFAULT_MODEL
 
                 rec = SessionRecord(
                     name=safe_name,
                     path=path,
+                    engine=engine_val,
                     thread_id=payload.get("thread_id")
                     if isinstance(payload.get("thread_id"), str)
                     else payload.get("session_id")
                     if isinstance(payload.get("session_id"), str)
                     else None,
-                    model=payload.get("model") if isinstance(payload.get("model"), str) and payload.get("model") else DEFAULT_MODEL,
+                    model=payload.get("model")
+                    if isinstance(payload.get("model"), str) and payload.get("model")
+                    else default_model,
                     reasoning_effort=payload.get("reasoning_effort")
                     if isinstance(payload.get("reasoning_effort"), str) and payload.get("reasoning_effort")
                     else payload.get("model_reasoning_effort")
@@ -224,6 +238,7 @@ class SessionManager:
             for name, rec in self.sessions.items():
                 sessions[name] = {
                     "path": rec.path,
+                    "engine": rec.engine,
                     "thread_id": rec.thread_id,
                     "model": rec.model,
                     "reasoning_effort": rec.reasoning_effort,
@@ -292,7 +307,7 @@ class SessionManager:
             await asyncio.gather(*stop_tasks, return_exceptions=True)
         await self.save_state()
 
-    async def create_session(self, *, name: str, path: str) -> Tuple[Optional[SessionRecord], str]:
+    async def create_session(self, *, name: str, path: str, engine: str = ENGINE_CODEX) -> Tuple[Optional[SessionRecord], str]:
         safe_name = safe_session_name(name)
         if not safe_name:
             return None, "Invalid name. Allowed: a-zA-Z0-9._- (<=64)."
@@ -308,7 +323,16 @@ class SessionManager:
         if safe_name in self.sessions:
             return None, f"Session '{safe_name}' already exists."
 
-        rec = SessionRecord(name=safe_name, path=abs_path, status="idle", last_result="never")
+        engine_val = engine if engine in ENGINE_CHOICES else ENGINE_CODEX
+        model_default = claude_cmd.claude_model_default() if engine_val == ENGINE_CLAUDE else DEFAULT_MODEL
+        rec = SessionRecord(
+            name=safe_name,
+            path=abs_path,
+            engine=engine_val,
+            model=model_default,
+            status="idle",
+            last_result="never",
+        )
         self.sessions[safe_name] = rec
         await self.save_state()
         return rec, ""
@@ -437,11 +461,16 @@ class SessionManager:
     def _build_codex_cmd(self, rec: SessionRecord, *, prompt: str, run_mode: str) -> List[str]:
         return codex_cmd.build_codex_cmd(rec, prompt=prompt, run_mode=run_mode)
 
-    async def _spawn_process(self, cmd: List[str]) -> asyncio.subprocess.Process:
+    def _build_claude_cmd(self, rec: SessionRecord, *, prompt: str, run_mode: str) -> List[str]:
+        return claude_cmd.build_claude_cmd(rec, prompt=prompt, run_mode=run_mode)
+
+    async def _spawn_process(self, cmd: List[str], *, cwd: Optional[str] = None) -> asyncio.subprocess.Process:
         kwargs: Dict[str, Any] = {
             "stdout": asyncio.subprocess.PIPE,
             "stderr": asyncio.subprocess.PIPE,
         }
+        if cwd:
+            kwargs["cwd"] = cwd
         if os.name == "posix":
             kwargs["start_new_session"] = True
         else:

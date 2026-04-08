@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Tuple
 
 from ..telegram_deps import InlineKeyboardMarkup
-from .ui_render_home import _render_home, _render_new_name, _render_new_path, _render_sessions_list
+from .ui_render_home import _render_home, _render_new_engine, _render_new_name, _render_new_path, _render_sessions_list
 from .ui_render_paths import _render_confirm_delete, _render_confirm_mkdir, _render_confirm_stop, _render_paths, _render_paths_add
 from .ui_render_session import _render_logs_view, _render_session_view
 from .ui_render_settings import _render_await_prompt, _render_model, _render_model_custom
@@ -22,6 +22,8 @@ def _render_current(manager: "SessionManager", *, chat_data: Dict[str, Any]) -> 
         return _render_sessions_list(manager, chat_data=chat_data, notice=notice)
     if mode == "new_name":
         return _render_new_name(manager, chat_data=chat_data, notice=notice)
+    if mode == "new_engine":
+        return _render_new_engine(chat_data=chat_data, notice=notice)
     if mode == "new_path":
         return _render_new_path(manager, chat_data=chat_data, notice=notice, notice_code=notice_code)
     if mode == "paths":
@@ -37,6 +39,7 @@ def _render_current(manager: "SessionManager", *, chat_data: Dict[str, Any]) -> 
             return _render_await_prompt(
                 session_name,
                 run_mode=run_mode,
+                engine=(rec.engine if rec else None),
                 model=(rec.model if rec else None),
                 reasoning_effort=(rec.reasoning_effort if rec else None),
                 path=(rec.path if rec else None),

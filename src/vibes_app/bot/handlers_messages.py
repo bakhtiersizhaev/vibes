@@ -6,9 +6,12 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from ..constants import ENGINE_CHOICES, ENGINE_CLAUDE, ENGINE_CODEX
 from ..constants import MEDIA_GROUP_DEBOUNCE_SECONDS
 from ..telegram_deps import ContextTypes, Update
 from ..utils.paths import can_create_directory as _can_create_directory
+from ..utils.paths import default_projects_root as _default_projects_root
+from ..utils.paths import is_simple_folder_name as _is_simple_folder_name
 from ..utils.paths import safe_resolve_path as _safe_resolve_path
 from ..utils.paths import safe_session_name as _safe_session_name
 from .attachments import build_prompt_with_downloaded_files as _build_prompt_with_downloaded_files
@@ -307,18 +310,50 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             _ui_set(context.chat_data, notice="A session with this name already exists.")
             await _rerender()
             return
-        _ui_nav_to(context.chat_data, mode="new_path", new={"name": safe})
+        _ui_nav_to(context.chat_data, mode="new_engine", new={"name": safe})
+        await _rerender()
+        return
+
+    if mode == "new_engine":
+        engine_text = text.strip().lower()
+        engine_val = ""
+        if engine_text in {ENGINE_CODEX, "codex-cli", "codex cli"}:
+            engine_val = ENGINE_CODEX
+        elif engine_text in {ENGINE_CLAUDE, "claude", "claude code", "claude-code"}:
+            engine_val = ENGINE_CLAUDE
+        if not engine_val:
+            _ui_set(context.chat_data, notice="Pick engine: codex or claude.")
+            await _rerender()
+            return
+        draft = ui.get("new") if isinstance(ui.get("new"), dict) else {}
+        draft["engine"] = engine_val
+        _ui_nav_to(context.chat_data, mode="new_path", new=draft)
         await _rerender()
         return
 
     if mode == "new_path":
         draft = ui.get("new")
         name = draft.get("name") if isinstance(draft, dict) else None
+        engine = draft.get("engine") if isinstance(draft, dict) else None
+        path_mode = draft.get("path_mode") if isinstance(draft, dict) else None
         if not isinstance(name, str) or not name:
             _ui_set(context.chat_data, mode="new_name", notice="Missing draft name. Start again.")
             await _rerender()
             return
-        resolved, err = _safe_resolve_path(text)
+        engine_val = engine if isinstance(engine, str) and engine in ENGINE_CHOICES else ENGINE_CODEX
+        if path_mode not in {"docs", "full"}:
+            _ui_set(context.chat_data, notice="Choose where to work first.")
+            await _rerender()
+            return
+        if path_mode == "docs":
+            if not _is_simple_folder_name(text):
+                _ui_set(context.chat_data, notice="Send only a folder name (no slashes).")
+                await _rerender()
+                return
+            path_text = str(_default_projects_root() / text.strip())
+        else:
+            path_text = text
+        resolved, err = _safe_resolve_path(path_text)
         if err:
             _ui_set(context.chat_data, notice=err, notice_code=text)
             await _rerender()
@@ -338,7 +373,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             _ui_set(context.chat_data, notice="Папка не найдена.", notice_code=abs_path)
             await _rerender()
             return
-        rec, err = await manager.create_session(name=name, path=abs_path)
+        rec, err = await manager.create_session(name=name, path=abs_path, engine=engine_val)
         if err:
             _ui_set(context.chat_data, notice=err, new={"name": name})
             await _rerender()

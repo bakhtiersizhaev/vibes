@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 from typing import Optional
 
-from ..constants import LABEL_BACK, STOP_CONFIRM_QUESTION
+from ..constants import ENGINE_CLAUDE, LABEL_BACK, STOP_CONFIRM_QUESTION
 from ..telegram_deps import InlineKeyboardButton, InlineKeyboardMarkup
 from .callbacks import cb as _cb
 from ..core.session_models import SessionRecord
@@ -19,10 +19,12 @@ def _build_running_header_plain(rec: SessionRecord, *, note: Optional[str] = Non
     lines = [
         f"Session: {rec.name}",
         f"Path: {rec.path}",
+        f"Engine: {rec.engine}",
         f"Model: {model}",
-        f"Reasoning effort: {reasoning_effort}",
         f"Status: {rec.status}",
     ]
+    if rec.engine != ENGINE_CLAUDE:
+        lines.insert(4, f"Reasoning effort: {reasoning_effort}")
     if note:
         lines.append(note)
     return "\n".join(lines)
@@ -36,11 +38,15 @@ def _build_running_header_html(rec: SessionRecord, *, note: Optional[str] = None
     model = rec.model
     reasoning_effort = rec.reasoning_effort
     note_line = f"\n<i>{_h(note)}</i>" if note else ""
+    reasoning_line = (
+        f"<b>Reasoning effort:</b> <code>{_h(reasoning_effort)}</code>\n" if rec.engine != ENGINE_CLAUDE else ""
+    )
     return (
         f"<b>Session:</b> <code>{_h(rec.name)}</code>\n"
         f"<b>Path:</b> <code>{_h(rec.path)}</code>\n"
+        f"<b>Engine:</b> <code>{_h(rec.engine)}</code>\n"
         f"<b>Model:</b> <code>{_h(model)}</code>\n"
-        f"<b>Reasoning effort:</b> <code>{_h(reasoning_effort)}</code>\n"
+        f"{reasoning_line}"
         f"<b>Status:</b> {_h(rec.status)}"
         f"{note_line}"
     )

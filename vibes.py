@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-vibes.py — Telegram-бот “session manager” для Codex CLI.
+vibes.py — Telegram-бот “session manager” для Codex CLI и Claude Code.
 
 This file is intentionally small: it is a compatibility shim used by tests (`import vibes`)
 and a thin runtime entrypoint (`python vibes.py`).
@@ -23,8 +23,22 @@ if _SRC_DIR.exists() and str(_SRC_DIR) not in sys.path:
 
 
 from vibes_app import runtime as _runtime  # noqa: E402
+from vibes_app.bot.attachments import pick_unique_dest_path as _pick_unique_dest_path  # noqa: E402
+from vibes_app.bot.attachments import sanitize_attachment_basename as _sanitize_attachment_basename  # noqa: E402
+from vibes_app.bot.callbacks import cb as _cb  # noqa: E402
+from vibes_app.bot.handlers_callback import on_callback  # noqa: E402
+from vibes_app.bot.handlers_messages import on_text  # noqa: E402
+from vibes_app.bot.render_sync import _render_and_sync  # noqa: E402
+from vibes_app.bot.ui_render_session import _render_session_view  # noqa: E402
+from vibes_app.bot.ui_run import _STOP_CONFIRM_QUESTION  # noqa: E402
+from vibes_app.bot.ui_run import _restore_run_stream_ui  # noqa: E402
+from vibes_app.bot.ui_run import _show_stop_confirmation_in_stream  # noqa: E402
+from vibes_app.bot.ui_run import _status_emoji  # noqa: E402
 from vibes_app.constants import (  # noqa: E402
     CB_PREFIX,
+    ENGINE_CHOICES,
+    ENGINE_CLAUDE,
+    ENGINE_CODEX,
     LABEL_BACK,
     LABEL_LOG,
     LABEL_START,
@@ -54,18 +68,6 @@ from vibes_app.utils.text import parse_tokens as _parse_tokens  # noqa: E402
 from vibes_app.utils.text import truncate_text as _truncate_text  # noqa: E402
 from vibes_app.utils.uuid import find_first_uuid as _find_first_uuid  # noqa: E402
 from vibes_app.utils.uuid import looks_like_uuid as _looks_like_uuid  # noqa: E402
-
-from vibes_app.bot.attachments import pick_unique_dest_path as _pick_unique_dest_path  # noqa: E402
-from vibes_app.bot.attachments import sanitize_attachment_basename as _sanitize_attachment_basename  # noqa: E402
-from vibes_app.bot.callbacks import cb as _cb  # noqa: E402
-from vibes_app.bot.handlers_callback import on_callback  # noqa: E402
-from vibes_app.bot.handlers_messages import on_text  # noqa: E402
-from vibes_app.bot.render_sync import _render_and_sync  # noqa: E402
-from vibes_app.bot.ui_render_session import _render_session_view  # noqa: E402
-from vibes_app.bot.ui_run import _STOP_CONFIRM_QUESTION  # noqa: E402
-from vibes_app.bot.ui_run import _restore_run_stream_ui  # noqa: E402
-from vibes_app.bot.ui_run import _show_stop_confirmation_in_stream  # noqa: E402
-from vibes_app.bot.ui_run import _status_emoji  # noqa: E402
 
 
 DEFAULT_RUNTIME_DIR = _runtime.DEFAULT_RUNTIME_DIR

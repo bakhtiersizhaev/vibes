@@ -29,8 +29,14 @@ DEFAULT_MODEL_PRESETS: List[str] = [
     "gpt-5.2",
 ]
 
+ENGINE_CODEX = "codex"
+ENGINE_CLAUDE = "claude"
+ENGINE_CHOICES = {ENGINE_CODEX, ENGINE_CLAUDE}
+
 DEFAULT_MODEL = "gpt-5.2"
 DEFAULT_REASONING_EFFORT = "high"
+DEFAULT_CLAUDE_MODEL = "sonnet"
+DEFAULT_CLAUDE_PERMISSION_MODE = "bypassPermissions"
 
 CODEX_SANDBOX_MODES = {"read-only", "workspace-write", "danger-full-access"}
 CODEX_APPROVAL_POLICIES = {"untrusted", "on-failure", "on-request", "never"}

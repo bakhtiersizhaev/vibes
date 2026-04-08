@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Deque, Dict, Optional
 
+from ..constants import ENGINE_CLAUDE
 from ..utils.logging import log_error, utc_now_iso
 from ..utils.text import truncate_text
 from ..utils.uuid import find_first_uuid
@@ -19,6 +20,57 @@ def _log_error_for(manager: Any, msg: str, exc: Optional[BaseException] = None) 
         log_error(msg, exc, log_path=log_path)
     except TypeError:
         log_error(msg, exc)
+
+
+def _extract_claude_session_id(obj: Dict[str, Any]) -> Optional[str]:
+    if obj.get("type") != "system" or obj.get("subtype") != "init":
+        return None
+    session_id = obj.get("session_id")
+    return session_id if isinstance(session_id, str) and session_id.strip() else None
+
+
+def _extract_claude_text_delta(obj: Dict[str, Any]) -> Optional[str]:
+    if obj.get("type") != "stream_event":
+        return None
+    event = obj.get("event")
+    if not isinstance(event, dict) or event.get("type") != "content_block_delta":
+        return None
+    delta = event.get("delta")
+    if not isinstance(delta, dict):
+        return None
+    text = delta.get("text")
+    return text if isinstance(text, str) and text else None
+
+
+def _extract_claude_assistant_text(obj: Dict[str, Any]) -> Optional[str]:
+    if obj.get("type") != "assistant":
+        return None
+    message = obj.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "text":
+            continue
+        text = block.get("text")
+        if isinstance(text, str) and text:
+            parts.append(text)
+    if not parts:
+        return None
+    return "".join(parts)
+
+
+def _extract_claude_result_text(obj: Dict[str, Any]) -> Optional[str]:
+    if obj.get("type") != "result":
+        return None
+    result = obj.get("result")
+    return result if isinstance(result, str) and result.strip() else None
 
 
 async def read_stdout(
@@ -177,6 +229,23 @@ async def read_stderr(
 
 
 async def handle_json_event(manager: Any, *, rec: SessionRecord, obj: Dict[str, Any], stream: Any) -> None:
+    if rec.engine == ENGINE_CLAUDE:
+        session_id = _extract_claude_session_id(obj)
+        if session_id and session_id != rec.thread_id:
+            rec.thread_id = session_id
+            rec.last_active = utc_now_iso()
+            await manager.save_state()
+
+        delta = _extract_claude_text_delta(obj)
+        if delta:
+            await stream.add_text(delta)
+            return
+
+        claude_text = _extract_claude_assistant_text(obj) or _extract_claude_result_text(obj)
+        if claude_text:
+            await stream.add_text(claude_text)
+        return
+
     event_type = codex_events.get_event_type(obj)
 
     if rec.thread_id is None:

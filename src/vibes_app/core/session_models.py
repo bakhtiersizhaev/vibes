@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Deque, Optional
 
-from ..constants import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT
+from ..constants import DEFAULT_MODEL, DEFAULT_REASONING_EFFORT, ENGINE_CODEX
 from ..utils.logging import utc_now_iso
 from ..telegram.stream import TelegramStream
 
@@ -32,6 +32,7 @@ class SessionRun:
 class SessionRecord:
     name: str
     path: str
+    engine: str = ENGINE_CODEX
     thread_id: Optional[str] = None
     model: str = DEFAULT_MODEL
     reasoning_effort: str = DEFAULT_REASONING_EFFORT
