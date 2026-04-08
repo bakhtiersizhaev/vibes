@@ -1,11 +1,12 @@
 # STATUS.MD
 
-Last updated: 2026-04-08 06:00 +05
-Branch: rust-rewrite-telegram-codex
+Last updated: 2026-04-08 12:36 +05
+Branch: main
 Repo: /Users/bkh/openclaw-assistant-integration-work/vibes
+Main SHA: 0b44eaaaf906bdc0430621c1531dec6bb8d09929
 
 ## Mission
-Full Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topics, DMs, and Codex CLI (`codex exec --json`) with green checks as the only definition of done.
+Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topics, DMs, and Codex CLI (`codex exec --json`) with green checks and direct push to `bakhtiersizhaev/vibes` `main`.
 
 ## Hard constraints
 - Rust-first rewrite
@@ -13,7 +14,7 @@ Full Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topics, DM
 - modular/extensible architecture
 - compact status pings
 - use subagents on complex separable branches
-- finish with green checks + fresh PR
+- finish with green checks + direct push to `main`
 
 ## Current decisions
 - Stack target: tokio, teloxide, sqlite persistence, serde_json, tracing, clap, anyhow/thiserror, uuid
@@ -31,23 +32,24 @@ Full Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topics, DM
 - Telegram message router added for `/new`, `/resume`, and bound prompt routing (`crates/vibes-app/src/router.rs`)
 - app controller + presenter pipeline added for Telegram-facing replies and prompt dispatch (`crates/vibes-app/src/controller.rs`, `crates/vibes-app/src/presenter.rs`)
 - persistent SQLite binding store added (`crates/vibes-store/src/sqlite.rs`)
-- codex runner integration around `codex exec --json` added (`crates/vibes-codex/src/runner.rs`)
+- codex runner upgraded to streaming supervision + cancellation (`crates/vibes-codex/src/runner.rs`)
+- codex streaming/cancellation tests added (`crates/vibes-codex/tests/runner_stream.rs`)
 - topic-title routing integrated into `/new` flow
-- full green local gate:
+- full green gate achieved and pushed to `main`:
   - `cargo fmt --all`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-  - `cargo test --workspace`
+  - `cargo test --workspace --all-features`
 
 ## Current loop
-1. Flesh out real Telegram adapter from controller primitives to update handling + responses
-2. Add end-to-end tests for command -> bind -> run -> render flow
-3. Upgrade codex runner from whole-process capture to streaming supervision + cancellation
-4. Prepare PR patchset and push branch
+1. Sync any leftover working-tree drift with pushed `main`
+2. Flesh out real Telegram adapter from controller primitives to update handling + responses
+3. Add end-to-end tests for command -> bind -> run -> render flow
+4. Continue direct-to-main delivery with green checks after each increment
 
 ## Active risks
 - `med-today`/heartbeat operational logic still outside this repo and can drift from bot UX expectations
-- runner currently uses whole-process output capture; streaming UX still pending
-- need explicit migration path if we switch store backend from `rusqlite` to `sqlx` pool later
+- full Telegram adapter/runtime wiring is not yet end-to-end complete
+- need explicit migration path if store backend later moves from `rusqlite` to `sqlx` pool
 
 ## User-facing compact context
-User is asleep. Continue autonomously. Send compact updates in format `сделал / делаю / дальше`. Final target is a fresh PR in GitHub only after green checks.
+User is asleep. Continue autonomously. Send compact updates in format `сделал / проверил / дальше`. Final target is direct green delivery into `main`, not PR flow.

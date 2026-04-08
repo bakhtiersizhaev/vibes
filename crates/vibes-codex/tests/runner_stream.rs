@@ -76,7 +76,10 @@ fn streams_events_before_process_exit() {
         })
     );
     assert_eq!(
-        recv_until(&rx, |line| matches!(line, ParsedCodexLine::Noise(text) if text == "plain-noise")),
+        recv_until(
+            &rx,
+            |line| matches!(line, ParsedCodexLine::Noise(text) if text == "plain-noise")
+        ),
         ParsedCodexLine::Noise("plain-noise".to_owned())
     );
     let result = join.join().unwrap();
