@@ -1,0 +1,16 @@
+[package]
+name = "vibes-store"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json.workspace = true
+thiserror.workspace = true
+vibes-core = { path = "../vibes-core" }
+
+[dev-dependencies]
+tempfile = "3"
