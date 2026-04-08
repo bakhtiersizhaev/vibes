@@ -1,9 +1,9 @@
 # STATUS.MD
 
-Last updated: 2026-04-08 15:26 +05
+Last updated: 2026-04-08 15:56 +05
 Branch: main
 Repo: /Users/bkh/openclaw-assistant-integration-work/vibes
-Main SHA: 276f82935a090fbc0e0b3d6815a88ceeb7e85753
+Main SHA: e56e0beb355559a7e4f0d43f5903b991c691db4e
 
 ## Mission
 Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topics, DMs, and Codex CLI (`codex exec --json`) with green checks and direct push to `bakhtiersizhaev/vibes` `main`.
@@ -44,6 +44,7 @@ Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topi
 - requester/runtime tests added in `crates/vibes-app/tests/telegram_runtime.rs`
 - concrete teloxide polling entrypoint added in `crates/vibes-app/src/main.rs`
 - prompt execution flow unified through runtime completion path so polling main and tests use the same send/execute logic
+- runtime send-failure coverage added so reply delivery failures are exercised in tests
 - full green gate achieved and pushed to `main`:
   - `cargo fmt --all`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
@@ -51,7 +52,7 @@ Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topi
 
 ## Current loop
 1. Expand coverage from runtime loop into deeper end-to-end send/reply execution flow
-2. Harden the live polling path around execution failures, reply delivery, and topic-thread behavior
+2. Harden the live polling path around delivery errors, execution failures, and topic-thread behavior
 3. Continue direct-to-main delivery with green checks after each increment
 
 ## Active risks
