@@ -7,3 +7,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+vibes-app = { path = "../vibes-app" }
+vibes-core = { path = "../vibes-core" }
+vibes-store = { path = "../vibes-store" }
+vibes-telegram = { path = "../vibes-telegram" }

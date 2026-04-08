@@ -1,9 +1,9 @@
 # STATUS.MD
 
-Last updated: 2026-04-08 12:36 +05
+Last updated: 2026-04-08 12:57 +05
 Branch: main
 Repo: /Users/bkh/openclaw-assistant-integration-work/vibes
-Main SHA: 0b44eaaaf906bdc0430621c1531dec6bb8d09929
+Main SHA: d8508cd0bce5df9f00c623e64f995ba7a2f671d9
 
 ## Mission
 Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topics, DMs, and Codex CLI (`codex exec --json`) with green checks and direct push to `bakhtiersizhaev/vibes` `main`.
@@ -34,6 +34,7 @@ Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topi
 - persistent SQLite binding store added (`crates/vibes-store/src/sqlite.rs`)
 - codex runner upgraded to streaming supervision + cancellation (`crates/vibes-codex/src/runner.rs`)
 - codex streaming/cancellation tests added (`crates/vibes-codex/tests/runner_stream.rs`)
+- end-to-end controller flow tests added in `crates/vibes-testkit/src/lib.rs` for `/new` -> topic bind -> prompt, `/resume` -> rebind -> prompt, and unbound-topic help flow
 - topic-title routing integrated into `/new` flow
 - full green gate achieved and pushed to `main`:
   - `cargo fmt --all`
@@ -41,10 +42,9 @@ Finish the Rust rewrite/refactor of `vibes` for Telegram supergroups, forum topi
   - `cargo test --workspace --all-features`
 
 ## Current loop
-1. Sync any leftover working-tree drift with pushed `main`
-2. Flesh out real Telegram adapter from controller primitives to update handling + responses
-3. Add end-to-end tests for command -> bind -> run -> render flow
-4. Continue direct-to-main delivery with green checks after each increment
+1. Flesh out real Telegram adapter from controller primitives to update handling + responses
+2. Expand end-to-end coverage from controller/service to real adapter-level update ingestion
+3. Continue direct-to-main delivery with green checks after each increment
 
 ## Active risks
 - `med-today`/heartbeat operational logic still outside this repo and can drift from bot UX expectations
