@@ -217,6 +217,67 @@ fn returns_prompt_ready_without_sending_message() {
 }
 
 #[test]
+fn sends_resume_reply_into_existing_topic_thread() {
+    let controller = controller();
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 8,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134547,
+                "message_thread_id": 900,
+                "text": "/resume rust-rewrite"
+            },
+            "update_id": 439432601
+        }"#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::Replied { target, text } = outcome else {
+        panic!("expected reply outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert!(text.contains("resumed") || text.contains("019d6361"));
+    assert!(text.contains("topic 900"));
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, -1001293752024);
+    assert_eq!(sent[0].1, Some(900));
+    assert!(sent[0].2.contains("resumed") || sent[0].2.contains("019d6361"));
+    assert!(sent[0].2.contains("topic 900"));
+}
+
+#[test]
 fn ignores_non_message_updates() {
     let controller = controller();
     let requester = FakeRequester::default();
