@@ -92,7 +92,7 @@ where
     ) -> Result<(), TelegramRequestError> {
         let mut request = self.send_message(ChatId(target.chat_id), text.to_owned());
         if let Some(thread_id) = target.message_thread_id {
-            request = request.message_thread_id(ThreadId(MessageId(thread_id as i32)));
+            request = request.message_thread_id(thread_id_to_teloxide(thread_id)?);
         }
         request
             .send()
@@ -100,6 +100,13 @@ where
             .map(|_| ())
             .map_err(|err| TelegramRequestError::new(err.to_string()))
     }
+}
+
+fn thread_id_to_teloxide(thread_id: i64) -> Result<ThreadId, TelegramRequestError> {
+    let raw = i32::try_from(thread_id).map_err(|_| {
+        TelegramRequestError::new(format!("thread id out of i32 range: {thread_id}"))
+    })?;
+    Ok(ThreadId(MessageId(raw)))
 }
 
 pub async fn run_telegram_update<S, R, T, Q>(
@@ -189,5 +196,22 @@ where
                 })
         }
         Err(err) => Err(err),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::thread_id_to_teloxide;
+
+    #[test]
+    fn converts_thread_id_in_i32_range() {
+        let thread_id = thread_id_to_teloxide(900).expect("conversion should succeed");
+        assert_eq!(thread_id.0.0, 900);
+    }
+
+    #[test]
+    fn rejects_thread_id_out_of_i32_range() {
+        let err = thread_id_to_teloxide(i64::MAX).expect_err("conversion should fail");
+        assert!(err.to_string().contains("thread id out of i32 range"));
     }
 }
