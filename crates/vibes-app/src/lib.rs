@@ -2,6 +2,7 @@ pub mod controller;
 pub mod presenter;
 pub mod router;
 pub mod service;
+pub mod update_ingest;
 
 pub use controller::{AppAction, AppController, HandleMessageError};
 pub use presenter::{
@@ -12,3 +13,4 @@ pub use router::{MessageRoute, MessageRouteError, RouteMessageInput, route_messa
 pub use service::{
     AppService, AppServiceError, BindOutcome, SessionRuntime, StartNewSessionInput, TopicManager,
 };
+pub use update_ingest::{TelegramUpdateAction, handle_telegram_update};
