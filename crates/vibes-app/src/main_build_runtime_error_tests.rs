@@ -1,19 +1,7 @@
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
 use teloxide::Bot;
 
 use crate::main_startup::build_runtime_components;
-
-static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn unique_db_path() -> PathBuf {
-    let pid = std::process::id();
-    let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("vibes-build-runtime-error-tests-{pid}-{n}.sqlite3"))
-}
+use crate::main_test_support::unique_db_path;
 
 #[cfg(test)]
 mod tests {
@@ -21,7 +9,7 @@ mod tests {
 
     #[test]
     fn build_runtime_components_returns_error_for_invalid_db_path() {
-        let db_path = unique_db_path()
+        let db_path = unique_db_path("vibes-build-runtime-error-tests")
             .with_extension("")
             .join("nested")
             .join("vibes.sqlite3");
