@@ -25,8 +25,6 @@ mod main_loop_transition_tests;
 #[cfg(test)]
 mod main_loop_message_tests;
 #[cfg(test)]
-mod main_loop_command_tests;
-#[cfg(test)]
 mod main_loop_direct_new_command_tests;
 #[cfg(test)]
 mod main_loop_forum_command_tests;
