@@ -4840,9 +4840,12 @@ fn complete_runtime_outcome_keeps_ignored_without_sending() {
         response: Mutex::new(Ok("unused".to_owned())),
     };
 
-    let completed =
-        run_ready(complete_runtime_outcome(&requester, &executor, RuntimeOutcome::Ignored))
-            .expect("completion ok");
+    let completed = run_ready(complete_runtime_outcome(
+        &requester,
+        &executor,
+        RuntimeOutcome::Ignored,
+    ))
+    .expect("completion ok");
 
     assert_eq!(completed, RuntimeOutcome::Ignored);
     assert!(
