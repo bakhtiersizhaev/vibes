@@ -69,6 +69,7 @@ mod main_prompt_success_tests;
 mod main_prompt_tests;
 mod main_runtime;
 mod main_runtime_components;
+mod main_runtime_entry;
 mod main_runtime_handlers;
 mod main_runtime_listener;
 mod main_runtime_loop;
@@ -89,34 +90,7 @@ mod main_codex_request_direct_tests;
 #[cfg(test)]
 mod main_runtime_path_tests;
 
-use main_runtime::CodexPromptExecutor;
-use main_runtime_loop::start_polling_loop;
-use main_runtime_components::build_runtime_components;
-use main_startup_context::build_startup_context;
-
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,vibes_app=debug".into()),
-        )
-        .with_target(false)
-        .compact()
-        .init();
-
-    let (bot, bot_username, workspace_root, db_path) = build_startup_context().await?;
-
-    let (_store, runtime, _topics, controller) = build_runtime_components(&bot, &db_path)?;
-    let executor = CodexPromptExecutor { runner: &runtime };
-
-    start_polling_loop(
-        &controller,
-        &bot,
-        &executor,
-        bot_username.as_deref(),
-        &workspace_root,
-    )
-    .await;
-    Ok(())
+    main_runtime_entry::run_app().await
 }
