@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::main_support::{bot_username, runtime_paths};
+    use crate::main_support::runtime_paths;
 
     #[test]
     fn runtime_paths_use_defaults_when_env_is_missing() {
