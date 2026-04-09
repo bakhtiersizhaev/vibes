@@ -5609,6 +5609,11 @@ struct ThreadFailRequester {
 #[derive(Debug, Default)]
 struct ThreadThenChatFailRequester;
 
+#[derive(Debug, Default)]
+struct DirectFailRequester {
+    calls: Mutex<Vec<Option<i64>>>,
+}
+
 #[async_trait(?Send)]
 impl TelegramRequester for ThreadFailRequester {
     async fn send_text(
@@ -5639,6 +5644,21 @@ impl TelegramRequester for ThreadThenChatFailRequester {
         } else {
             Err(TelegramRequestError::new("chat send boom"))
         }
+    }
+}
+
+#[async_trait(?Send)]
+impl TelegramRequester for DirectFailRequester {
+    async fn send_text(
+        &self,
+        target: &ReplyTarget,
+        _text: &str,
+    ) -> Result<(), TelegramRequestError> {
+        self.calls
+            .lock()
+            .expect("direct fail requester lock poisoned")
+            .push(target.message_thread_id);
+        Err(TelegramRequestError::new("direct send boom"))
     }
 }
 
@@ -5673,6 +5693,43 @@ fn returns_request_error_when_thread_fallback_also_fails() {
         err.to_string()
             .contains("telegram request failed: chat send boom")
     );
+}
+
+#[test]
+fn direct_send_failure_does_not_attempt_thread_fallback() {
+    let requester = DirectFailRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("done transcript".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: None,
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Direct(408258968),
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let err = run_ready(complete_runtime_outcome(&requester, &executor, outcome))
+        .expect_err("direct send should fail");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: direct send boom")
+    );
+
+    let calls = requester
+        .calls
+        .lock()
+        .expect("direct fail requester lock poisoned");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0], None);
 }
 
 #[test]
