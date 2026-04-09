@@ -7,7 +7,7 @@ mod main_listener_command_tests;
 #[cfg(test)]
 mod main_listener_core_tests;
 #[cfg(test)]
-mod main_loop_tests;
+mod main_loop_core_tests;
 #[cfg(test)]
 mod main_loop_event_tests;
 #[cfg(test)]
