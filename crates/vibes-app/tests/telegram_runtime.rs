@@ -2148,6 +2148,75 @@ fn sends_resume_reply_from_caption_into_existing_topic_thread() {
 }
 
 #[test]
+fn returns_request_error_when_caption_resume_reply_send_fails() {
+    let controller = controller();
+    let requester = FakeRequester {
+        sent: Mutex::new(Vec::new()),
+        fail: Mutex::new(Some("send boom".to_owned())),
+    };
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "caption": "/resume rust-rewrite",
+                "caption_entities": [
+                    {
+                        "length": 8,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "photo": [
+                    {
+                        "file_id": "id",
+                        "file_unique_id": "uq",
+                        "width": 1,
+                        "height": 1
+                    }
+                ],
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134547,
+                "message_thread_id": 900
+            },
+            "update_id": 439432601
+        }"#,
+    );
+
+    let err = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect_err("send failure expected");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: send boom")
+    );
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn sends_resume_reply_into_existing_topic_thread() {
     let controller = controller();
     let requester = FakeRequester::default();
