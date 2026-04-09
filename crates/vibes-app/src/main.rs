@@ -2322,6 +2322,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_next_listener_event_returns_true_for_request_error() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let keep_running = handle_next_listener_event(
+            &controller,
+            &bot,
+            &executor,
+            Some(Err(RequestError::Api(ApiError::Unknown("boom".to_owned())))),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        assert!(keep_running);
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn handle_next_listener_event_returns_false_for_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
