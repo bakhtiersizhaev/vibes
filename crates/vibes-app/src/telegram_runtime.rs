@@ -232,6 +232,13 @@ mod tests {
     }
 
     #[test]
+    fn rejects_thread_id_just_above_i32_upper_bound() {
+        let err =
+            thread_id_to_teloxide(i64::from(i32::MAX) + 1).expect_err("i32::MAX + 1 should fail");
+        assert!(err.to_string().contains("thread id out of i32 range"));
+    }
+
+    #[test]
     fn rejects_thread_id_out_of_i32_range() {
         let err = thread_id_to_teloxide(i64::MAX).expect_err("conversion should fail");
         assert!(err.to_string().contains("thread id out of i32 range"));
