@@ -262,9 +262,22 @@ async fn run_polling_loop<S>(
 
 #[cfg(test)]
 mod tests {
-    use super::build_runtime_components;
+    use super::{build_runtime_components, handle_next_listener_event};
     use std::time::{SystemTime, UNIX_EPOCH};
     use teloxide::Bot;
+    use vibes_app::{TelegramExecutionError, TelegramPromptExecutor};
+
+    struct NoopExecutor;
+
+    impl TelegramPromptExecutor for NoopExecutor {
+        fn execute_prompt(
+            &self,
+            _binding: &vibes_core::SessionBinding,
+            _prompt: &str,
+        ) -> Result<String, TelegramExecutionError> {
+            Ok("noop".to_owned())
+        }
+    }
 
     #[test]
     fn build_runtime_components_creates_sqlite_store_at_path() {
@@ -304,6 +317,30 @@ mod tests {
 
         assert!(rendered.contains("failed to open sqlite store"));
         assert!(rendered.contains(&path_string));
+    }
+
+    #[tokio::test]
+    async fn handle_next_listener_event_returns_false_for_stream_end() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+
+        let keep_running =
+            handle_next_listener_event(&controller, &bot, &executor, None, None, "/workspace")
+                .await;
+
+        assert!(!keep_running);
+        std::fs::remove_file(db_path).unwrap();
     }
 }
 
