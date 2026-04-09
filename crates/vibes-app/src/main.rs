@@ -124,6 +124,24 @@ async fn handle_runtime_outcome(
     }
 }
 
+async fn handle_update(
+    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    update: teloxide::types::Update,
+    bot_username: Option<&str>,
+    workspace_root: &str,
+) {
+    match run_telegram_update(controller, bot, &update, bot_username, workspace_root).await {
+        Ok(outcome) => {
+            handle_runtime_outcome(bot, executor, outcome).await;
+        }
+        Err(err) => {
+            error!(error = %err, "failed to handle telegram update");
+        }
+    }
+}
+
 async fn handle_listener_item(
     controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
     bot: &Bot,
@@ -134,15 +152,15 @@ async fn handle_listener_item(
 ) {
     match update {
         Ok(update) => {
-            match run_telegram_update(controller, bot, &update, bot_username, workspace_root).await
-            {
-                Ok(outcome) => {
-                    handle_runtime_outcome(bot, executor, outcome).await;
-                }
-                Err(err) => {
-                    error!(error = %err, "failed to handle telegram update");
-                }
-            }
+            handle_update(
+                controller,
+                bot,
+                executor,
+                update,
+                bot_username,
+                workspace_root,
+            )
+            .await;
         }
         Err(err) => error!(error = ?err, "polling listener error"),
     }
