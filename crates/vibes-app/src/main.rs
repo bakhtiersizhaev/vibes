@@ -19,6 +19,8 @@ mod main_next_listener_forum_tests;
 #[cfg(test)]
 mod main_next_listener_basic_tests;
 #[cfg(test)]
+mod main_next_listener_stream_end_tests;
+#[cfg(test)]
 mod main_next_listener_direct_new_tests;
 #[cfg(test)]
 mod main_next_listener_direct_resume_tests;
