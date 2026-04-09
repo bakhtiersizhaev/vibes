@@ -422,6 +422,80 @@ fn returns_prompt_ready_without_sending_message() {
 }
 
 #[test]
+fn prompt_executes_and_replies_in_direct_chat() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Direct(408258968),
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("direct transcript".to_owned())),
+    };
+    let update = parse_update(
+        r#"
+        {
+          "message": {
+            "chat": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "type": "private",
+              "username": "hirrolot"
+            },
+            "date": 1581448857,
+            "from": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "is_bot": false,
+              "language_code": "en",
+              "username": "hirrolot"
+            },
+            "message_id": 155,
+            "text": "continue parser work"
+          },
+          "update_id": 306197399
+        }
+        "#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::PromptReady { target, prompt, .. } = &outcome else {
+        panic!("expected prompt-ready outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, None);
+    assert_eq!(prompt, "continue parser work");
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("execution ok");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, None);
+    assert_eq!(text, "direct transcript");
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(
+        sent.as_slice(),
+        &[(408258968, None, "direct transcript".to_owned())]
+    );
+}
+
+#[test]
 fn returns_prompt_ready_from_caption_without_text() {
     let store = InMemoryBindingStore::default();
     store.upsert_binding(vibes_core::SessionBinding {
