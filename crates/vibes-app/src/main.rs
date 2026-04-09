@@ -72,7 +72,6 @@ mod main_runtime_components;
 mod main_runtime_handlers;
 mod main_runtime_loop;
 mod main_runtime_outcome;
-mod main_startup;
 mod main_startup_context;
 mod main_support;
 #[cfg(test)]
@@ -90,7 +89,8 @@ mod main_runtime_path_tests;
 
 use main_runtime::CodexPromptExecutor;
 use main_runtime_loop::start_polling_loop;
-use main_startup::{build_runtime_components, build_startup_context};
+use main_runtime_components::build_runtime_components;
+use main_startup_context::build_startup_context;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {

@@ -1,6 +1,6 @@
 use teloxide::Bot;
 
-use crate::main_startup::build_runtime_components;
+use crate::main_runtime_components::build_runtime_components;
 use crate::main_test_support::unique_db_path;
 
 #[cfg(test)]

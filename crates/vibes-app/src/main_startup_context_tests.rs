@@ -2,7 +2,7 @@
 mod tests {
     use teloxide::{ApiError, Bot, RequestError, types::User};
 
-    use crate::main_startup::{startup_context_from_get_me, startup_context_from_parts};
+    use crate::main_startup_context::{startup_context_from_get_me, startup_context_from_parts};
 
     #[test]
     fn startup_context_from_parts_preserves_missing_bot_username() {
