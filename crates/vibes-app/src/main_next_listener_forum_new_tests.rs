@@ -10,7 +10,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_new_caption() {
-        let db_path = unique_db_path("vibes-next-listener-forum-command-tests");
+        let db_path = unique_db_path("vibes-next-listener-forum-new-tests");
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
@@ -63,7 +63,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_new_command() {
-        let db_path = unique_db_path("vibes-next-listener-forum-command-tests");
+        let db_path = unique_db_path("vibes-next-listener-forum-new-tests");
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
