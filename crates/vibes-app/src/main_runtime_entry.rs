@@ -1,8 +1,9 @@
 use teloxide::Bot;
 use vibes_codex::CodexExecRunner;
 
-use crate::main_runtime::CodexPromptExecutor;
-use crate::main_runtime_components::{build_runtime_components, RuntimeController};
+use crate::main_runtime_components::{
+    build_runtime_components, CodexPromptExecutor, RuntimeController,
+};
 use crate::main_runtime_loop::start_polling_loop;
 use crate::main_startup_context::build_startup_context;
 use crate::main_tracing::init_tracing;
