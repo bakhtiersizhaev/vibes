@@ -2539,6 +2539,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_polling_loop_logs_shutdown_and_stop() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let writer = SharedWriter::default();
+        let captured = writer.0.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer(writer)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        run_polling_loop_with_shutdown(
+            &controller,
+            &bot,
+            &executor,
+            iter(Vec::<Result<Update, RequestError>>::new()),
+            std::future::ready(()),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        let rendered = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+        assert!(rendered.contains("ctrl-c received, stopping polling loop"));
+        assert!(rendered.contains("vibes polling loop stopped"));
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn run_polling_loop_returns_when_shutdown_resolves_immediately() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
