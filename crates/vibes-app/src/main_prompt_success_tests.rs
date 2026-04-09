@@ -1,9 +1,7 @@
 use std::sync::Mutex;
 
 use crate::main_runtime::handle_prompt_ready;
-use crate::main_test_support::{
-    NoopExecutor, RecordingExecutor, RecordingRequester, SharedWriter,
-};
+use crate::main_test_support::{NoopExecutor, RecordingExecutor, RecordingRequester};
 
 #[cfg(test)]
 mod tests {
