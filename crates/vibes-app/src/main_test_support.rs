@@ -1,13 +1,25 @@
 use std::{
     io,
     io::Write,
-    sync::{Arc, Mutex},
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use tracing_subscriber::fmt::MakeWriter;
 use vibes_app::{
     TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError, TelegramRequester,
 };
+
+static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn unique_db_path(prefix: &str) -> PathBuf {
+    let pid = std::process::id();
+    let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("{prefix}-{pid}-{n}.sqlite3"))
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct SharedWriter(pub(crate) Arc<Mutex<Vec<u8>>>);
