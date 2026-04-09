@@ -2,17 +2,7 @@ use crate::main_runtime::CodexPromptExecutor;
 use crate::main_runtime_components::build_runtime_components;
 use crate::main_runtime_loop::start_polling_loop;
 use crate::main_startup_context::build_startup_context;
-
-fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,vibes_app=debug".into()),
-        )
-        .with_target(false)
-        .compact()
-        .init();
-}
+use crate::main_tracing::init_tracing;
 
 pub(crate) async fn run_app() -> anyhow::Result<()> {
     init_tracing();
