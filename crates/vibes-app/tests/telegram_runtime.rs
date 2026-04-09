@@ -1812,6 +1812,41 @@ fn prompt_ready_executes_and_sends_transcript_reply() {
 }
 
 #[test]
+fn direct_prompt_execution_failure_is_sent_as_reply_text() {
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Err("boom".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: None,
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Direct(408258968),
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("execution ok");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, None);
+    assert!(text.contains("Codex execution failed: telegram execution failed: boom"));
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.as_slice(), &[(408258968, None, text)]);
+}
+
+#[test]
 fn topic_prompt_update_executes_and_replies_back_into_same_thread() {
     let store = InMemoryBindingStore::default();
     store.upsert_binding(vibes_core::SessionBinding {
