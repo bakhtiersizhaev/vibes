@@ -328,6 +328,26 @@ mod tests {
         }
     }
 
+    struct RecordingExecutor {
+        seen: Mutex<Vec<(String, String, String)>>,
+        response: String,
+    }
+
+    impl TelegramPromptExecutor for RecordingExecutor {
+        fn execute_prompt(
+            &self,
+            binding: &vibes_core::SessionBinding,
+            prompt: &str,
+        ) -> Result<String, TelegramExecutionError> {
+            self.seen.lock().unwrap().push((
+                binding.workspace_root.clone(),
+                binding.session.codex_session_id.clone(),
+                prompt.to_owned(),
+            ));
+            Ok(self.response.clone())
+        }
+    }
+
     #[tokio::test]
     async fn handle_runtime_outcome_keeps_ignored_without_executor_use() {
         let bot = Bot::new("123456:TESTTOKEN");
@@ -398,6 +418,51 @@ mod tests {
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn handle_prompt_ready_passes_binding_and_prompt_to_executor() {
+        let requester = RecordingRequester {
+            sent: Mutex::new(Vec::new()),
+            fail: Mutex::new(None),
+        };
+        let executor = RecordingExecutor {
+            seen: Mutex::new(Vec::new()),
+            response: "recorded".to_owned(),
+        };
+        let target = vibes_telegram::ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: None,
+        };
+        let binding = vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Direct(408258968),
+            workspace_root: "/workspace".to_owned(),
+            session: vibes_core::SessionHandle {
+                codex_session_id: "codex-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+        };
+
+        handle_prompt_ready(
+            &requester,
+            &executor,
+            target.clone(),
+            binding,
+            "continue parser work".to_owned(),
+        )
+        .await;
+
+        let seen = executor.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].0, "/workspace");
+        assert_eq!(seen[0].1, "codex-1");
+        assert_eq!(seen[0].2, "continue parser work");
+        drop(seen);
+
+        let sent = requester.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].0, target);
+        assert_eq!(sent[0].1, "recorded");
     }
 
     #[tokio::test]
