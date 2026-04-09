@@ -321,13 +321,16 @@ mod tests {
         run_polling_loop_with_shutdown, startup_context_from_get_me, startup_context_from_parts,
     };
     use std::{
-        sync::Mutex,
+        io,
+        io::Write,
+        sync::{Arc, Mutex},
         time::{SystemTime, UNIX_EPOCH},
     };
     use teloxide::types::User;
     use teloxide::{ApiError, Bot, RequestError, types::Update};
     use tokio_stream::StreamExt;
     use tokio_stream::iter;
+    use tracing_subscriber::fmt::MakeWriter;
     use vibes_app::{
         RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError,
         TelegramRequester,
@@ -354,6 +357,30 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((target.clone(), text.to_owned()));
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    struct SharedWriterGuard(Arc<Mutex<Vec<u8>>>);
+
+    impl<'a> MakeWriter<'a> for SharedWriter {
+        type Writer = SharedWriterGuard;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            SharedWriterGuard(self.0.clone())
+        }
+    }
+
+    impl Write for SharedWriterGuard {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
     }
@@ -1942,6 +1969,48 @@ mod tests {
         .unwrap();
 
         handle_listener_item(&controller, &bot, &executor, Ok(update), None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_listener_item_logs_request_error() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let writer = SharedWriter::default();
+        let captured = writer.0.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer(writer)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handle_listener_item(
+            &controller,
+            &bot,
+            &executor,
+            Err(RequestError::Api(ApiError::Unknown("boom".to_owned()))),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        let rendered = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+        assert!(rendered.contains("polling listener error"));
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
