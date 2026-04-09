@@ -1,35 +1,14 @@
 use anyhow::Context;
-use teloxide::{
-    prelude::{Bot, Request, Requester},
-    types::ChatId,
-};
-use vibes_app::{AppController, AppService, AppServiceError, TopicManager};
+use teloxide::prelude::Bot;
+use vibes_app::{AppController, AppService};
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
 pub(crate) use crate::main_runtime_executor::CodexPromptExecutor;
+use crate::main_runtime_topics::BotTopicManager;
 
 pub(crate) type RuntimeController =
     AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>;
-
-pub(crate) struct BotTopicManager {
-    pub(crate) bot: Bot,
-}
-
-impl TopicManager for BotTopicManager {
-    fn create_topic(&self, chat_id: i64, title: &str) -> Result<i64, AppServiceError> {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.bot
-                    .create_forum_topic(ChatId(chat_id), title.to_owned())
-                    .send()
-                    .await
-                    .map(|topic| i64::from(topic.thread_id.0.0))
-                    .map_err(|err| AppServiceError::Topic(err.to_string()))
-            })
-        })
-    }
-}
 
 pub(crate) fn build_runtime_components(
     bot: &Bot,
