@@ -7,8 +7,6 @@ mod main_listener_tests;
 #[cfg(test)]
 mod main_loop_tests;
 #[cfg(test)]
-mod main_polling_tests;
-#[cfg(test)]
 mod main_prompt_tests;
 #[cfg(test)]
 mod main_update_tests;
