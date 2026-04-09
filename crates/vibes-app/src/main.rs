@@ -329,7 +329,7 @@ mod tests {
     use teloxide::types::User;
     use teloxide::{ApiError, Bot, RequestError, types::Update};
     use tokio_stream::StreamExt;
-    use tokio_stream::iter;
+    use tokio_stream::{iter, pending};
     use tracing_subscriber::fmt::MakeWriter;
     use vibes_app::{
         RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError,
@@ -1421,6 +1421,63 @@ mod tests {
         .unwrap();
 
         handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_update_logs_runtime_error() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let update: Update = serde_json::from_str(
+            r#"{
+                "update_id": 998,
+                "message": {
+                    "message_id": 776,
+                    "date": 1710001110,
+                    "chat": {
+                        "id": -1001293752024,
+                        "type": "supergroup",
+                        "title": "Vibes",
+                        "is_forum": true
+                    },
+                    "message_thread_id": 900,
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "hello without binding"
+                }
+            }"#,
+        )
+        .unwrap();
+        let writer = SharedWriter::default();
+        let captured = writer.0.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .without_time()
+            .with_writer(writer)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+
+        let rendered = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+        assert!(rendered.contains("failed to handle telegram update"));
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -2566,7 +2623,7 @@ mod tests {
             &controller,
             &bot,
             &executor,
-            iter(Vec::<Result<Update, RequestError>>::new()),
+            pending::<Result<Update, RequestError>>(),
             std::future::ready(()),
             None,
             "/workspace",
