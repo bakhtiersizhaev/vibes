@@ -11,5 +11,7 @@ pub(crate) use crate::main_runtime_outcome::{
     handle_prompt_ready, handle_runtime_outcome,
 };
 
-pub(crate) use crate::main_runtime_components::{BotTopicManager, CodexPromptExecutor};
+pub(crate) use crate::main_runtime_components::{
+    BotTopicManager, CodexPromptExecutor, build_runtime_components,
+};
 
