@@ -195,6 +195,32 @@ async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String,
     Ok((bot, bot_username, workspace_root, db_path))
 }
 
+async fn handle_next_listener_event(
+    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    update: Option<Result<teloxide::types::Update, teloxide::RequestError>>,
+    bot_username: Option<&str>,
+    workspace_root: &str,
+) -> bool {
+    let Some(update) = update else {
+        info!("polling listener stream ended");
+        return false;
+    };
+
+    handle_listener_item(
+        controller,
+        bot,
+        executor,
+        update,
+        bot_username,
+        workspace_root,
+    )
+    .await;
+
+    true
+}
+
 async fn run_polling_loop<S>(
     controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
     bot: &Bot,
@@ -217,20 +243,16 @@ async fn run_polling_loop<S>(
                 break;
             }
             update = stream.next() => {
-                let Some(update) = update else {
-                    info!("polling listener stream ended");
-                    break;
-                };
-
-                handle_listener_item(
+                if !handle_next_listener_event(
                     controller,
                     bot,
                     executor,
                     update,
                     bot_username,
                     workspace_root,
-                )
-                .await;
+                ).await {
+                    break;
+                }
             }
         }
     }
