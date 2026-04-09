@@ -689,6 +689,67 @@ fn sends_reply_for_new_session_update_from_caption_inside_existing_topic() {
 }
 
 #[test]
+fn sends_reply_for_new_session_update_inside_existing_topic() {
+    let controller = controller();
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 4,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code":"en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134546,
+                "message_thread_id": 900,
+                "text": "/new rust-rewrite"
+            },
+            "update_id": 439432600
+        }"#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::Replied { target, text } = outcome else {
+        panic!("expected reply outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert!(text.contains("rust-rewrite") || text.contains("019d6361"));
+    assert!(!text.contains("Created topic"));
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, -1001293752024);
+    assert_eq!(sent[0].1, Some(900));
+    assert!(sent[0].2.contains("rust-rewrite") || sent[0].2.contains("019d6361"));
+    assert!(!sent[0].2.contains("Created topic"));
+}
+
+#[test]
 fn returns_request_error_when_caption_new_session_reply_send_fails_inside_existing_topic() {
     let controller = controller();
     let requester = FakeRequester {
