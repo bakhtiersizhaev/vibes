@@ -5,6 +5,8 @@ use tracing::info;
 #[cfg(test)]
 mod main_event_tests;
 #[cfg(test)]
+mod main_listener_tests;
+#[cfg(test)]
 mod main_loop_tests;
 #[cfg(test)]
 mod main_prompt_tests;
