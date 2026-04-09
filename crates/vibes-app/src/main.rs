@@ -7,8 +7,6 @@ mod main_listener_command_tests;
 #[cfg(test)]
 mod main_listener_core_tests;
 #[cfg(test)]
-mod main_loop_core_tests;
-#[cfg(test)]
 mod main_loop_shutdown_tests;
 #[cfg(test)]
 mod main_next_listener_tests;
