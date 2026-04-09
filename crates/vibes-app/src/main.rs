@@ -63,6 +63,10 @@ mod main_loop_topic_new_tests;
 #[cfg(test)]
 mod main_loop_topic_resume_tests;
 #[cfg(test)]
+mod main_loop_ctrlc_tests;
+#[cfg(test)]
+mod main_loop_shutdown_signal_tests;
+#[cfg(test)]
 mod main_prompt_success_tests;
 #[cfg(test)]
 mod main_prompt_tests;
