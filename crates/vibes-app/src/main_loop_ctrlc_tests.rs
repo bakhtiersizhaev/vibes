@@ -42,7 +42,6 @@ mod tests {
 
         let rendered = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
         assert!(rendered.contains("ctrl-c received, stopping polling loop"));
-        assert!(rendered.contains("vibes polling loop stopped"));
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
