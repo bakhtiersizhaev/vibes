@@ -181,6 +181,71 @@ fn returns_request_error_when_new_session_reply_send_fails() {
 }
 
 #[test]
+fn sends_reply_for_new_session_update_from_caption_in_direct_chat() {
+    let controller = controller();
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": 408258968,
+                    "first_name": "Baha",
+                    "type": "private",
+                    "username": "spacewhaleblues"
+                },
+                "date": 1721592580,
+                "caption": "/new rust-rewrite",
+                "caption_entities": [
+                    {
+                        "length": 4,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "photo": [
+                    {
+                        "file_id": "id",
+                        "file_unique_id": "uq",
+                        "width": 1,
+                        "height": 1
+                    }
+                ],
+                "from": {
+                    "first_name": "Baha",
+                    "id": 408258968,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134545
+            },
+            "update_id": 439432599
+        }"#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::Replied { target, text } = outcome else {
+        panic!("expected reply outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, None);
+    assert!(text.contains("rust-rewrite") || text.contains("019d6361"));
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, 408258968);
+    assert_eq!(sent[0].1, None);
+    assert!(sent[0].2.contains("rust-rewrite") || sent[0].2.contains("019d6361"));
+}
+
+#[test]
 fn sends_reply_for_new_session_update_in_direct_chat() {
     let controller = controller();
     let requester = FakeRequester::default();
