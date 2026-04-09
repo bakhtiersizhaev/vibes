@@ -1678,6 +1678,7 @@ mod tests {
         }
     }
 
+    #[tokio::test]
     async fn run_polling_loop_keeps_running_through_request_error_until_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
