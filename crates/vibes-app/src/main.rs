@@ -21,7 +21,7 @@ mod main_next_listener_direct_command_tests;
 #[cfg(test)]
 mod main_next_listener_direct_resume_command_tests;
 #[cfg(test)]
-mod main_next_listener_forum_command_tests;
+mod main_next_listener_forum_new_command_tests;
 #[cfg(test)]
 mod main_next_listener_forum_resume_command_tests;
 #[cfg(test)]
