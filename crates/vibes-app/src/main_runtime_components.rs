@@ -3,14 +3,11 @@ use teloxide::{
     prelude::{Bot, Request, Requester},
     types::ChatId,
 };
-use vibes_app::{
-    AppController, AppService, AppServiceError, TelegramExecutionError, TelegramPromptExecutor,
-    TopicManager,
-};
+use vibes_app::{AppController, AppService, AppServiceError, TopicManager};
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
-use crate::main_support::{codex_request_and_cwd, rendered_or_default};
+pub(crate) use crate::main_runtime_executor::CodexPromptExecutor;
 
 pub(crate) type RuntimeController =
     AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>;
@@ -31,24 +28,6 @@ impl TopicManager for BotTopicManager {
                     .map_err(|err| AppServiceError::Topic(err.to_string()))
             })
         })
-    }
-}
-
-pub(crate) struct CodexPromptExecutor<'a> {
-    pub(crate) runner: &'a CodexExecRunner,
-}
-
-impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
-    fn execute_prompt(
-        &self,
-        binding: &vibes_core::SessionBinding,
-        prompt: &str,
-    ) -> Result<String, TelegramExecutionError> {
-        let (request, cwd) = codex_request_and_cwd(binding, prompt);
-        let result = self.runner.run(&request, &cwd).map_err(|err| {
-            TelegramExecutionError::new(format!("codex prompt execution failed: {err}"))
-        })?;
-        Ok(rendered_or_default(result.transcript.rendered()))
     }
 }
 
