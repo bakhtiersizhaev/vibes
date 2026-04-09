@@ -264,7 +264,7 @@ async fn run_polling_loop<S>(
 mod tests {
     use super::{build_runtime_components, handle_next_listener_event};
     use std::time::{SystemTime, UNIX_EPOCH};
-    use teloxide::{Bot, types::Update};
+    use teloxide::{ApiError, Bot, RequestError, types::Update};
     use vibes_app::{TelegramExecutionError, TelegramPromptExecutor};
 
     struct NoopExecutor;
@@ -360,7 +360,9 @@ mod tests {
                 .await;
 
         assert!(!keep_running);
-        std::fs::remove_file(db_path).unwrap();
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
     }
 
     #[tokio::test]
@@ -406,7 +408,42 @@ mod tests {
         .await;
 
         assert!(keep_running);
-        std::fs::remove_file(db_path).unwrap();
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_next_listener_event_keeps_running_for_request_error() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let request_error = RequestError::Api(ApiError::Unknown("bad request".to_owned()));
+
+        let keep_running = handle_next_listener_event(
+            &controller,
+            &bot,
+            &executor,
+            Some(Err(request_error)),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        assert!(keep_running);
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
     }
 }
 
