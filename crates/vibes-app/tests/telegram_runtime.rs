@@ -1001,6 +1001,59 @@ fn ignores_non_message_updates() {
 }
 
 #[test]
+fn ignores_plain_text_update_when_text_is_whitespace() {
+    let controller = AppController::new(AppService::new(
+        InMemoryBindingStore::default(),
+        FakeRuntime,
+        FakeTopics,
+    ));
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"
+        {
+          "message": {
+            "chat": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "type": "private",
+              "username": "hirrolot"
+            },
+            "date": 1581448857,
+            "from": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "is_bot": false,
+              "language_code": "en",
+              "username": "hirrolot"
+            },
+            "message_id": 158,
+            "text": "   "
+          },
+          "update_id": 306197402
+        }
+        "#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    assert_eq!(outcome, RuntimeOutcome::Ignored);
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn ignores_caption_only_media_when_caption_is_whitespace() {
     let controller = controller();
     let requester = FakeRequester::default();
