@@ -39,6 +39,19 @@ struct CodexPromptExecutor<'a> {
     runner: &'a CodexExecRunner,
 }
 
+fn codex_request_and_cwd(
+    binding: &vibes_core::SessionBinding,
+    prompt: &str,
+) -> (CodexRunRequest, std::path::PathBuf) {
+    (
+        CodexRunRequest {
+            prompt: prompt.to_owned(),
+            resume_target: Some(binding.session.codex_session_id.clone()),
+        },
+        std::path::PathBuf::from(&binding.workspace_root),
+    )
+}
+
 fn rendered_or_default(rendered: String) -> String {
     if rendered.trim().is_empty() {
         "Codex run completed with no transcript output.".to_owned()
@@ -53,25 +66,36 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
         binding: &vibes_core::SessionBinding,
         prompt: &str,
     ) -> Result<String, TelegramExecutionError> {
-        let result = self
-            .runner
-            .run(
-                &CodexRunRequest {
-                    prompt: prompt.to_owned(),
-                    resume_target: Some(binding.session.codex_session_id.clone()),
-                },
-                std::path::Path::new(&binding.workspace_root),
-            )
-            .map_err(|err| {
-                TelegramExecutionError::new(format!("codex prompt execution failed: {err}"))
-            })?;
+        let (request, cwd) = codex_request_and_cwd(binding, prompt);
+        let result = self.runner.run(&request, &cwd).map_err(|err| {
+            TelegramExecutionError::new(format!("codex prompt execution failed: {err}"))
+        })?;
         Ok(rendered_or_default(result.transcript.rendered()))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::rendered_or_default;
+    use super::{codex_request_and_cwd, rendered_or_default};
+    use vibes_core::{ChatScope, SessionBinding, SessionHandle};
+
+    #[test]
+    fn codex_request_and_cwd_preserves_binding_session_and_workspace() {
+        let binding = SessionBinding {
+            scope: ChatScope::Direct(408258968),
+            workspace_root: "/tmp/vibes-workspace".to_owned(),
+            session: SessionHandle {
+                codex_session_id: "sess-123".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+        };
+
+        let (request, cwd) = codex_request_and_cwd(&binding, "continue parser work");
+
+        assert_eq!(request.prompt, "continue parser work");
+        assert_eq!(request.resume_target.as_deref(), Some("sess-123"));
+        assert_eq!(cwd, std::path::PathBuf::from("/tmp/vibes-workspace"));
+    }
 
     #[test]
     fn rendered_or_default_returns_fallback_for_blank_transcript() {
