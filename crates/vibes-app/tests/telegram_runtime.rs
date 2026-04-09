@@ -554,6 +554,94 @@ fn topic_caption_prompt_executes_and_replies_back_into_same_thread() {
 }
 
 #[test]
+fn topic_caption_prompt_execution_failure_falls_back_to_chat_reply() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Topic {
+            chat_id: -1001293752024,
+            topic_id: 900,
+        },
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = ThreadFailRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Err("boom".to_owned())),
+    };
+    let update = parse_update(
+        r#"
+        {
+          "message": {
+            "chat": {
+              "id": -1001293752024,
+              "title": "CryptoInside Chat",
+              "type": "supergroup",
+              "username": "cryptoinside_talk",
+              "is_forum": true
+            },
+            "date": 1721592580,
+            "from": {
+              "first_name": "the Cable Guy",
+              "id": 5964236329,
+              "is_bot": false,
+              "language_code": "en",
+              "username": "tg"
+            },
+            "message_id": 3128,
+            "message_thread_id": 900,
+            "caption": "continue parser from topic caption",
+            "photo": [
+              {
+                "file_id": "id",
+                "file_unique_id": "uq",
+                "width": 1,
+                "height": 1
+              }
+            ]
+          },
+          "update_id": 306197404
+        }
+        "#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let completion =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("fallback send");
+
+    let RuntimeOutcome::Replied { target, text } = completion else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert!(text.contains("Codex execution failed: telegram execution failed: boom"));
+
+    let sent = requester
+        .sent
+        .lock()
+        .expect("thread fail requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, -1001293752024);
+    assert_eq!(sent[0].1, None);
+    assert!(
+        sent[0]
+            .2
+            .contains("Codex execution failed: telegram execution failed: boom")
+    );
+}
+
+#[test]
 fn sends_resume_reply_into_existing_topic_thread() {
     let controller = controller();
     let requester = FakeRequester::default();
