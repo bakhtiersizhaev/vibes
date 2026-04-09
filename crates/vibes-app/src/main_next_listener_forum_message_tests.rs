@@ -22,7 +22,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_next_listener_event_keeps_running_for_topic_message_update() {
+    async fn handle_next_listener_event_keeps_running_for_forum_root_message_update() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -34,10 +34,9 @@ mod tests {
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 3,
+                "update_id": 5,
                 "message": {
-                    "message_id": 11,
-                    "message_thread_id": 900,
+                    "message_id": 14,
                     "date": 1710000000,
                     "chat": {
                         "id": -1001293752024,
@@ -50,7 +49,7 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "text": "hello topic"
+                    "text": "hello forum root"
                 }
             }"#,
         )
@@ -73,7 +72,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_next_listener_event_keeps_running_for_topic_caption_update() {
+    async fn handle_next_listener_event_keeps_running_for_forum_root_caption_update() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -85,10 +84,9 @@ mod tests {
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 4,
+                "update_id": 6,
                 "message": {
-                    "message_id": 12,
-                    "message_thread_id": 900,
+                    "message_id": 15,
                     "date": 1710000000,
                     "chat": {
                         "id": -1001293752024,
@@ -101,7 +99,7 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "caption": "hello topic caption"
+                    "caption": "hello forum root caption"
                 }
             }"#,
         )
@@ -122,5 +120,4 @@ mod tests {
             std::fs::remove_file(db_path).unwrap();
         }
     }
-
 }
