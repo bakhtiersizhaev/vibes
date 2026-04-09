@@ -26,7 +26,11 @@ fn build_topic_manager(bot: &Bot) -> BotTopicManager {
     BotTopicManager { bot: bot.clone() }
 }
 
-fn build_runtime_controller(bot: &Bot, db_path: &str, runtime: &CodexExecRunner) -> anyhow::Result<RuntimeController> {
+fn build_runtime_controller(
+    bot: &Bot,
+    db_path: &str,
+    runtime: &CodexExecRunner,
+) -> anyhow::Result<RuntimeController> {
     let controller_store = open_sqlite_store(db_path)?;
     Ok(AppController::new(AppService::new(
         controller_store,
