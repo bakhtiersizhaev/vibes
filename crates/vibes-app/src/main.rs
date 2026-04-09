@@ -117,6 +117,25 @@ mod tests {
     }
 
     #[test]
+    fn codex_request_and_cwd_preserves_padded_multiline_prompt() {
+        let binding = SessionBinding {
+            scope: ChatScope::Direct(408258968),
+            workspace_root: "/tmp/vibes-workspace".to_owned(),
+            session: SessionHandle {
+                codex_session_id: "sess-123".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+        };
+
+        let prompt = "  step 1\nstep 2\nfinal line  ";
+        let (request, cwd) = codex_request_and_cwd(&binding, prompt);
+
+        assert_eq!(request.prompt, prompt);
+        assert_eq!(request.resume_target.as_deref(), Some("sess-123"));
+        assert_eq!(cwd, std::path::PathBuf::from("/tmp/vibes-workspace"));
+    }
+
+    #[test]
     fn codex_request_and_cwd_preserves_topic_binding_session_and_workspace() {
         let binding = SessionBinding {
             scope: ChatScope::Topic {
