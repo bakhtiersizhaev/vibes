@@ -62,6 +62,8 @@ mod main_test_support;
 #[cfg(test)]
 mod main_support_tests;
 #[cfg(test)]
+mod main_codex_request_tests;
+#[cfg(test)]
 mod main_transcript_tests;
 #[cfg(test)]
 mod main_startup_tests;
