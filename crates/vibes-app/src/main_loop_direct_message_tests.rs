@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use teloxide::{ApiError, Bot, RequestError, types::Update};
+use teloxide::{Bot, types::Update};
 use tokio_stream::iter;
 
 use crate::main_runtime::run_polling_loop;
