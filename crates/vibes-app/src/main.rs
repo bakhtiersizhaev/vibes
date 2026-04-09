@@ -264,7 +264,7 @@ async fn run_polling_loop<S>(
 mod tests {
     use super::{
         build_runtime_components, handle_listener_item, handle_next_listener_event,
-        handle_runtime_outcome, run_polling_loop,
+        handle_runtime_outcome, handle_update, run_polling_loop,
     };
     use std::time::{SystemTime, UNIX_EPOCH};
     use teloxide::{ApiError, Bot, RequestError, types::Update};
@@ -308,6 +308,52 @@ mod tests {
         };
 
         handle_runtime_outcome(&bot, &executor, outcome).await;
+    }
+
+    #[tokio::test]
+    async fn handle_update_ignores_runtime_error_without_executor_use() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let update: Update = serde_json::from_str(
+            r#"{
+                "update_id": 999,
+                "message": {
+                    "message_id": 777,
+                    "date": 1710001111,
+                    "chat": {
+                        "id": -1001293752024,
+                        "type": "supergroup",
+                        "title": "Vibes",
+                        "is_forum": true
+                    },
+                    "message_thread_id": 900,
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "hello without binding"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
     }
 
     #[tokio::test]
