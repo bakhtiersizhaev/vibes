@@ -22,6 +22,15 @@ fn open_sqlite_store(db_path: &str) -> anyhow::Result<SqliteBindingStore> {
         .with_context(|| format!("failed to open sqlite store at {db_path}"))
 }
 
+fn build_runtime_controller(bot: &Bot, db_path: &str, runtime: &CodexExecRunner) -> anyhow::Result<RuntimeController> {
+    let controller_store = open_sqlite_store(db_path)?;
+    Ok(AppController::new(AppService::new(
+        controller_store,
+        runtime.clone(),
+        BotTopicManager { bot: bot.clone() },
+    )))
+}
+
 pub(crate) fn build_runtime_components(
     bot: &Bot,
     db_path: &str,
@@ -29,11 +38,6 @@ pub(crate) fn build_runtime_components(
     let store = open_sqlite_store(db_path)?;
     let runtime = CodexExecRunner::default();
     let topics = BotTopicManager { bot: bot.clone() };
-    let controller_store = open_sqlite_store(db_path)?;
-    let controller = AppController::new(AppService::new(
-        controller_store,
-        runtime.clone(),
-        BotTopicManager { bot: bot.clone() },
-    ));
+    let controller = build_runtime_controller(bot, db_path, &runtime)?;
     Ok((store, runtime, topics, controller))
 }
