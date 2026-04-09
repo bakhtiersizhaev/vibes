@@ -31,6 +31,8 @@ mod main_loop_non_message_tests;
 #[cfg(test)]
 mod main_loop_request_error_tests;
 #[cfg(test)]
+mod main_loop_mixed_tests;
+#[cfg(test)]
 mod main_loop_direct_message_tests;
 #[cfg(test)]
 mod main_loop_topic_message_tests;
