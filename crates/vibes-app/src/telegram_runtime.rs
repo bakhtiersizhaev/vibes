@@ -103,6 +103,12 @@ where
 }
 
 fn thread_id_to_teloxide(thread_id: i64) -> Result<ThreadId, TelegramRequestError> {
+    if thread_id <= 0 {
+        return Err(TelegramRequestError::new(format!(
+            "thread id must be positive: {thread_id}"
+        )));
+    }
+
     let raw = i32::try_from(thread_id).map_err(|_| {
         TelegramRequestError::new(format!("thread id out of i32 range: {thread_id}"))
     })?;
@@ -207,6 +213,15 @@ mod tests {
     fn converts_thread_id_in_i32_range() {
         let thread_id = thread_id_to_teloxide(900).expect("conversion should succeed");
         assert_eq!(thread_id.0.0, 900);
+    }
+
+    #[test]
+    fn rejects_non_positive_thread_id() {
+        let err = thread_id_to_teloxide(0).expect_err("zero should fail");
+        assert!(err.to_string().contains("thread id must be positive"));
+
+        let err = thread_id_to_teloxide(-1).expect_err("negative should fail");
+        assert!(err.to_string().contains("thread id must be positive"));
     }
 
     #[test]
