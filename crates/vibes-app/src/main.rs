@@ -41,6 +41,8 @@ struct CodexPromptExecutor<'a> {
 }
 
 mod main_support;
+#[cfg(test)]
+mod main_test_support;
 
 use main_support::{bot_username, codex_request_and_cwd, rendered_or_default, runtime_paths};
 
@@ -320,112 +322,18 @@ mod tests {
         handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
         run_polling_loop_with_shutdown, startup_context_from_get_me, startup_context_from_parts,
     };
+    use crate::main_test_support::{
+        NoopExecutor, PanicExecutor, RecordingExecutor, RecordingRequester, SharedWriter,
+    };
     use std::{
-        io,
-        io::Write,
-        sync::{Arc, Mutex},
+        sync::Mutex,
         time::{SystemTime, UNIX_EPOCH},
     };
     use teloxide::types::User;
     use teloxide::{ApiError, Bot, RequestError, types::Update};
     use tokio_stream::StreamExt;
     use tokio_stream::{iter, pending};
-    use tracing_subscriber::fmt::MakeWriter;
-    use vibes_app::{
-        RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError,
-        TelegramRequester,
-    };
-
-    struct NoopExecutor;
-
-    struct RecordingRequester {
-        sent: Mutex<Vec<(vibes_telegram::ReplyTarget, String)>>,
-        fail: Mutex<Option<String>>,
-    }
-
-    #[async_trait::async_trait(?Send)]
-    impl TelegramRequester for RecordingRequester {
-        async fn send_text(
-            &self,
-            target: &vibes_telegram::ReplyTarget,
-            text: &str,
-        ) -> Result<(), TelegramRequestError> {
-            if let Some(message) = self.fail.lock().unwrap().clone() {
-                return Err(TelegramRequestError::new(message));
-            }
-            self.sent
-                .lock()
-                .unwrap()
-                .push((target.clone(), text.to_owned()));
-            Ok(())
-        }
-    }
-
-    #[derive(Clone, Default)]
-    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
-
-    struct SharedWriterGuard(Arc<Mutex<Vec<u8>>>);
-
-    impl<'a> MakeWriter<'a> for SharedWriter {
-        type Writer = SharedWriterGuard;
-
-        fn make_writer(&'a self) -> Self::Writer {
-            SharedWriterGuard(self.0.clone())
-        }
-    }
-
-    impl Write for SharedWriterGuard {
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    struct PanicExecutor;
-
-    impl TelegramPromptExecutor for PanicExecutor {
-        fn execute_prompt(
-            &self,
-            _binding: &vibes_core::SessionBinding,
-            _prompt: &str,
-        ) -> Result<String, TelegramExecutionError> {
-            panic!("executor should not run");
-        }
-    }
-
-    impl TelegramPromptExecutor for NoopExecutor {
-        fn execute_prompt(
-            &self,
-            _binding: &vibes_core::SessionBinding,
-            _prompt: &str,
-        ) -> Result<String, TelegramExecutionError> {
-            Ok("noop".to_owned())
-        }
-    }
-
-    struct RecordingExecutor {
-        seen: Mutex<Vec<(String, String, String)>>,
-        response: String,
-    }
-
-    impl TelegramPromptExecutor for RecordingExecutor {
-        fn execute_prompt(
-            &self,
-            binding: &vibes_core::SessionBinding,
-            prompt: &str,
-        ) -> Result<String, TelegramExecutionError> {
-            self.seen.lock().unwrap().push((
-                binding.workspace_root.clone(),
-                binding.session.codex_session_id.clone(),
-                prompt.to_owned(),
-            ));
-            Ok(self.response.clone())
-        }
-    }
+    use vibes_app::RuntimeOutcome;
 
     #[tokio::test]
     async fn handle_runtime_outcome_keeps_ignored_without_executor_use() {
