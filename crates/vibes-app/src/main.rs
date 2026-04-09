@@ -19,7 +19,7 @@ mod main_next_listener_basic_tests;
 #[cfg(test)]
 mod main_next_listener_direct_new_tests;
 #[cfg(test)]
-mod main_next_listener_direct_resume_tests;
+mod main_next_listener_direct_resume_command_tests;
 #[cfg(test)]
 mod main_next_listener_forum_new_tests;
 #[cfg(test)]
