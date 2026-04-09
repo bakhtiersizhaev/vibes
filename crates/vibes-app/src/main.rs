@@ -417,6 +417,15 @@ mod tests {
 
         assert_eq!(bot_username(&user), None);
     }
+
+    #[test]
+    fn bot_username_preserves_empty_string_when_present() {
+        let user: teloxide::types::User =
+            serde_json::from_str(r#"{"id":1,"is_bot":true,"first_name":"Vibes","username":""}"#)
+                .unwrap();
+
+        assert_eq!(bot_username(&user).as_deref(), Some(""));
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
