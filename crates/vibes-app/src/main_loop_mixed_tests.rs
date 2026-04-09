@@ -1,30 +1,17 @@
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
 use teloxide::{ApiError, Bot, RequestError, types::Update};
 use tokio_stream::iter;
 
 use crate::main_runtime::run_polling_loop;
 use crate::main_startup::build_runtime_components;
-use crate::main_test_support::NoopExecutor;
+use crate::main_test_support::{NoopExecutor, unique_db_path};
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn unique_db_path() -> PathBuf {
-        let pid = std::process::id();
-        let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("vibes-loop-mixed-tests-{pid}-{n}.sqlite3"))
-    }
-
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_request_error_then_message_until_stream_end() {
-        let db_path = unique_db_path();
+        let db_path = unique_db_path("vibes-loop-mixed-tests");
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
@@ -68,7 +55,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_message_then_request_error_until_stream_end() {
-        let db_path = unique_db_path();
+        let db_path = unique_db_path("vibes-loop-mixed-tests");
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
