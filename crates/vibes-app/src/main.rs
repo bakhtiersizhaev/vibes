@@ -88,6 +88,12 @@ mod tests {
             "done transcript"
         );
     }
+
+    #[test]
+    fn rendered_or_default_preserves_multiline_transcript() {
+        let rendered = "step 1\nstep 2\nfinal line".to_owned();
+        assert_eq!(rendered_or_default(rendered.clone()), rendered);
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
