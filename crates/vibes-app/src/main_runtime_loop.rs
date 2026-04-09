@@ -7,7 +7,7 @@ use tracing::info;
 use vibes_app::TelegramPromptExecutor;
 
 use crate::main_runtime_components::RuntimeController;
-use crate::main_runtime_handlers::handle_next_listener_event;
+use crate::main_runtime_listener::handle_next_listener_event;
 
 pub(crate) async fn run_polling_loop_with_shutdown<S, F, E>(
     controller: &RuntimeController,

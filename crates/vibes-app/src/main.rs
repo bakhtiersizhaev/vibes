@@ -70,6 +70,7 @@ mod main_prompt_tests;
 mod main_runtime;
 mod main_runtime_components;
 mod main_runtime_handlers;
+mod main_runtime_listener;
 mod main_runtime_loop;
 mod main_runtime_outcome;
 mod main_startup_context;
