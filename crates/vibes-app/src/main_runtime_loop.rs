@@ -1,4 +1,6 @@
 use teloxide::prelude::Bot;
+use teloxide::update_listeners;
+use teloxide::update_listeners::AsUpdateStream;
 use tokio::pin;
 use tokio_stream::StreamExt;
 use tracing::info;
@@ -65,6 +67,35 @@ pub(crate) async fn run_polling_loop<S, E>(
         async {
             let _ = tokio::signal::ctrl_c().await;
         },
+        bot_username,
+        workspace_root,
+    )
+    .await;
+}
+
+pub(crate) async fn start_polling_loop<E>(
+    controller: &AppController<
+        vibes_store::SqliteBindingStore,
+        vibes_codex::CodexExecRunner,
+        BotTopicManager,
+    >,
+    bot: &Bot,
+    executor: &E,
+    bot_username: Option<&str>,
+    workspace_root: &str,
+) where
+    E: TelegramPromptExecutor,
+{
+    let mut listener = update_listeners::polling_default(bot.clone()).await;
+    let stream = listener.as_stream();
+
+    info!(bot_username = ?bot_username, workspace_root, "vibes polling loop started");
+
+    run_polling_loop(
+        controller,
+        bot,
+        executor,
+        stream,
         bot_username,
         workspace_root,
     )

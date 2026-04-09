@@ -1,6 +1,3 @@
-use teloxide::update_listeners;
-use teloxide::update_listeners::AsUpdateStream;
-use tracing::info;
 
 #[cfg(test)]
 mod main_listener_forum_new_tests;
@@ -91,7 +88,7 @@ mod main_codex_request_direct_tests;
 mod main_runtime_path_tests;
 
 use main_runtime::CodexPromptExecutor;
-use main_runtime_loop::run_polling_loop;
+use main_runtime_loop::start_polling_loop;
 use main_startup::{build_runtime_components, build_startup_context};
 
 #[tokio::main(flavor = "multi_thread")]
@@ -110,16 +107,10 @@ async fn main() -> anyhow::Result<()> {
     let (_store, runtime, _topics, controller) = build_runtime_components(&bot, &db_path)?;
     let executor = CodexPromptExecutor { runner: &runtime };
 
-    let mut listener = update_listeners::polling_default(bot.clone()).await;
-    let stream = listener.as_stream();
-
-    info!(bot_username = ?bot_username, db_path, workspace_root, "vibes polling loop started");
-
-    run_polling_loop(
+    start_polling_loop(
         &controller,
         &bot,
         &executor,
-        stream,
         bot_username.as_deref(),
         &workspace_root,
     )
