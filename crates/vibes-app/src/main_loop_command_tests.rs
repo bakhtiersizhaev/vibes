@@ -3,14 +3,12 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use teloxide::{ApiError, Bot, RequestError, types::Update};
-use tokio_stream::{StreamExt, iter, pending};
+use teloxide::{Bot, types::Update};
+use tokio_stream::iter;
 
-use crate::main_runtime::{
-    handle_next_listener_event, run_polling_loop, run_polling_loop_with_shutdown,
-};
+use crate::main_runtime::run_polling_loop;
 use crate::main_startup::build_runtime_components;
-use crate::main_test_support::{NoopExecutor, PanicExecutor, SharedWriter};
+use crate::main_test_support::NoopExecutor;
 
 #[cfg(test)]
 mod tests {
