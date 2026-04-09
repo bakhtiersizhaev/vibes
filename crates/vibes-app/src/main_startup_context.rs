@@ -7,7 +7,6 @@ use teloxide::{
 };
 
 use crate::main_support::{bot_username, runtime_paths};
-use vibes_store::SqliteBindingStore;
 
 pub(crate) async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
     let bot = Bot::from_env();
@@ -44,10 +43,4 @@ pub(crate) fn startup_context_from_parts(
     let bot_username = bot_username(user);
     let (workspace_root, db_path) = runtime_paths(workspace_root_override, db_path_override);
     (bot, bot_username, workspace_root, db_path)
-}
-
-
-pub(crate) fn open_sqlite_store(db_path: &str) -> anyhow::Result<SqliteBindingStore> {
-    SqliteBindingStore::open(db_path)
-        .with_context(|| format!("failed to open sqlite store at {db_path}"))
 }
