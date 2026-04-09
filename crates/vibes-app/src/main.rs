@@ -375,6 +375,17 @@ mod tests {
         assert_eq!(workspace_root, ".");
         assert_eq!(db_path, "");
     }
+
+    #[test]
+    fn runtime_paths_preserve_workspace_override_with_empty_db() {
+        let (workspace_root, db_path) = runtime_paths(
+            Some("/tmp/custom-workspace".to_owned()),
+            Some(String::new()),
+        );
+
+        assert_eq!(workspace_root, "/tmp/custom-workspace");
+        assert_eq!(db_path, "");
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
