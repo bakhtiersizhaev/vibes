@@ -69,6 +69,7 @@ mod main_prompt_success_tests;
 mod main_prompt_tests;
 mod main_runtime;
 mod main_runtime_components;
+mod main_runtime_bootstrap;
 mod main_runtime_entry;
 mod main_runtime_handlers;
 mod main_tracing;
