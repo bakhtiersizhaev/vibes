@@ -4,7 +4,7 @@ use std::{
 };
 
 use teloxide::{Bot, RequestError, types::Update};
-use tokio_stream::{StreamExt, iter, pending};
+use tokio_stream::pending;
 
 use crate::main_runtime::run_polling_loop_with_shutdown;
 use crate::main_startup::build_runtime_components;
