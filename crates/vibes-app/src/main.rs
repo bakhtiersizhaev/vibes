@@ -60,6 +60,13 @@ fn rendered_or_default(rendered: String) -> String {
     }
 }
 
+fn runtime_paths(workspace_root: Option<String>, db_path: Option<String>) -> (String, String) {
+    (
+        workspace_root.unwrap_or_else(|| ".".to_owned()),
+        db_path.unwrap_or_else(|| "vibes.sqlite3".to_owned()),
+    )
+}
+
 impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
     fn execute_prompt(
         &self,
@@ -76,7 +83,7 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{codex_request_and_cwd, rendered_or_default};
+    use super::{codex_request_and_cwd, rendered_or_default, runtime_paths};
     use vibes_core::{ChatScope, SessionBinding, SessionHandle};
 
     #[test]
@@ -308,6 +315,25 @@ mod tests {
         let rendered = "  done transcript  ".to_owned();
         assert_eq!(rendered_or_default(rendered.clone()), rendered);
     }
+
+    #[test]
+    fn runtime_paths_use_defaults_when_env_is_missing() {
+        let (workspace_root, db_path) = runtime_paths(None, None);
+
+        assert_eq!(workspace_root, ".");
+        assert_eq!(db_path, "vibes.sqlite3");
+    }
+
+    #[test]
+    fn runtime_paths_preserve_env_overrides() {
+        let (workspace_root, db_path) = runtime_paths(
+            Some("/tmp/custom-workspace".to_owned()),
+            Some("/tmp/custom.sqlite3".to_owned()),
+        );
+
+        assert_eq!(workspace_root, "/tmp/custom-workspace");
+        assert_eq!(db_path, "/tmp/custom.sqlite3");
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -324,8 +350,10 @@ async fn main() -> anyhow::Result<()> {
     let bot = Bot::from_env();
     let me = bot.get_me().send().await.context("get_me failed")?;
     let bot_username = me.user.username.clone();
-    let workspace_root = env::var("VIBES_WORKSPACE_ROOT").unwrap_or_else(|_| ".".to_owned());
-    let db_path = env::var("VIBES_DB_PATH").unwrap_or_else(|_| "vibes.sqlite3".to_owned());
+    let (workspace_root, db_path) = runtime_paths(
+        env::var("VIBES_WORKSPACE_ROOT").ok(),
+        env::var("VIBES_DB_PATH").ok(),
+    );
 
     let store = SqliteBindingStore::open(&db_path)
         .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
