@@ -90,6 +90,14 @@ mod tests {
     }
 
     #[test]
+    fn rendered_or_default_returns_fallback_for_cr_only_transcript() {
+        assert_eq!(
+            rendered_or_default("\r   \t".to_owned()),
+            "Codex run completed with no transcript output."
+        );
+    }
+
+    #[test]
     fn rendered_or_default_keeps_non_empty_transcript() {
         assert_eq!(
             rendered_or_default("done transcript".to_owned()),
