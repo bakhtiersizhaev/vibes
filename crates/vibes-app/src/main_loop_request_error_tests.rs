@@ -19,11 +19,11 @@ mod tests {
     fn unique_db_path() -> PathBuf {
         let pid = std::process::id();
         let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("vibes-loop-transition-tests-{pid}-{n}.sqlite3"))
+        std::env::temp_dir().join(format!("vibes-loop-request-error-tests-{pid}-{n}.sqlite3"))
     }
 
     #[tokio::test]
-    async fn run_polling_loop_keeps_running_through_message_then_non_message_until_stream_end() {
+    async fn run_polling_loop_keeps_running_through_request_error_then_message_until_stream_end() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -33,12 +33,12 @@ mod tests {
         let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
-        let message: Update = serde_json::from_str(
+        let update: Update = serde_json::from_str(
             r#"{
                 "update_id": 103,
                 "message": {
-                    "message_id": 11,
-                    "date": 1710000000,
+                    "message_id": 202,
+                    "date": 1710000002,
                     "chat": {
                         "id": 408258968,
                         "type": "private",
@@ -49,28 +49,15 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "text": "hello"
+                    "text": "hello after error"
                 }
             }"#,
         )
         .unwrap();
-        let non_message: Update = serde_json::from_str(
-            r#"{
-                "update_id": 104,
-                "callback_query": {
-                    "id": "abc123",
-                    "from": {
-                        "id": 408258968,
-                        "is_bot": false,
-                        "first_name": "Bakhtier"
-                    },
-                    "chat_instance": "instance",
-                    "data": "noop"
-                }
-            }"#,
-        )
-        .unwrap();
-        let stream = iter(vec![Ok(message), Ok(non_message)]);
+        let stream = iter(vec![
+            Err(RequestError::Api(ApiError::Unknown("boom".to_owned()))),
+            Ok(update),
+        ]);
 
         run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
 
@@ -80,8 +67,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_polling_loop_keeps_running_through_non_message_then_request_error_until_stream_end()
-     {
+    async fn run_polling_loop_keeps_running_through_message_then_request_error_until_stream_end() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -91,24 +77,29 @@ mod tests {
         let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
-        let callback: Update = serde_json::from_str(
+        let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 1009,
-                "callback_query": {
-                    "id": "cb-main-9",
+                "update_id": 104,
+                "message": {
+                    "message_id": 203,
+                    "date": 1710000003,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
                     "from": {
                         "id": 408258968,
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "chat_instance": "ci-main-9",
-                    "data": "noop"
+                    "text": "hello before error"
                 }
             }"#,
         )
         .unwrap();
-        let stream = tokio_stream::iter(vec![
-            Ok(callback),
+        let stream = iter(vec![
+            Ok(update),
             Err(RequestError::Api(ApiError::Unknown("boom".to_owned()))),
         ]);
 
@@ -120,7 +111,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_polling_loop_keeps_running_through_non_message_then_message_until_stream_end() {
+    async fn run_polling_loop_keeps_running_through_request_error_until_stream_end() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -130,7 +121,28 @@ mod tests {
         let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
-        let non_message: Update = serde_json::from_str(
+        let request_error = RequestError::Api(ApiError::Unknown("bad request".to_owned()));
+        let stream = iter(vec![Err(request_error)]);
+        run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn run_polling_loop_keeps_running_through_request_error_then_non_message_until_stream_end()
+     {
+        let db_path = unique_db_path();
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (_store, _runtime, _topics, controller) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let update: Update = serde_json::from_str(
             r#"{
                 "update_id": 102,
                 "callback_query": {
@@ -146,65 +158,11 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let message: Update = serde_json::from_str(
-            r#"{
-                "update_id": 103,
-                "message": {
-                    "message_id": 11,
-                    "date": 1710000000,
-                    "chat": {
-                        "id": 408258968,
-                        "type": "private",
-                        "first_name": "Bakhtier"
-                    },
-                    "from": {
-                        "id": 408258968,
-                        "is_bot": false,
-                        "first_name": "Bakhtier"
-                    },
-                    "text": "hello"
-                }
-            }"#,
-        )
-        .unwrap();
-        let stream = iter(vec![Ok(non_message), Ok(message)]);
+        let stream = iter(vec![
+            Err(RequestError::Api(ApiError::Unknown("boom".to_owned()))),
+            Ok(update),
+        ]);
 
-        run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
-
-        if db_path.exists() {
-            std::fs::remove_file(db_path).unwrap();
-        }
-    }
-
-    #[tokio::test]
-    async fn run_polling_loop_keeps_running_through_non_message_until_stream_end() {
-        let db_path = unique_db_path();
-        if db_path.exists() {
-            std::fs::remove_file(&db_path).unwrap();
-        }
-
-        let bot = Bot::new("123456:TESTTOKEN");
-        let (_store, _runtime, _topics, controller) =
-            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
-        let executor = NoopExecutor;
-        let update: Update = serde_json::from_str(
-            r#"{
-                "update_id": 20,
-                "callback_query": {
-                    "id": "cbq-2",
-                    "from": {
-                        "id": 408258968,
-                        "is_bot": false,
-                        "first_name": "Bakhtier"
-                    },
-                    "chat_instance": "instance-2",
-                    "data": "noop"
-                }
-            }"#,
-        )
-        .unwrap();
-
-        let stream = iter(vec![Ok(update)]);
         run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
 
         if db_path.exists() {
