@@ -100,6 +100,30 @@ async fn handle_prompt_ready(
     }
 }
 
+async fn handle_runtime_outcome(
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    outcome: RuntimeOutcome,
+) {
+    match outcome {
+        RuntimeOutcome::Ignored => {}
+        RuntimeOutcome::Replied { target, .. } => {
+            info!(
+                chat_id = target.chat_id,
+                thread_id = target.message_thread_id,
+                "reply sent"
+            );
+        }
+        RuntimeOutcome::PromptReady {
+            target,
+            binding,
+            prompt,
+        } => {
+            handle_prompt_ready(bot, executor, target, binding, prompt).await;
+        }
+    }
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -157,20 +181,8 @@ async fn main() -> anyhow::Result<()> {
                     )
                     .await
                     {
-                        Ok(RuntimeOutcome::Ignored) => {}
-                        Ok(RuntimeOutcome::Replied { target, .. }) => {
-                            info!(
-                                chat_id = target.chat_id,
-                                thread_id = target.message_thread_id,
-                                "reply sent"
-                            );
-                        }
-                        Ok(RuntimeOutcome::PromptReady {
-                            target,
-                            binding,
-                            prompt,
-                        }) => {
-                            handle_prompt_ready(&bot, &executor, target, binding, prompt).await;
+                        Ok(outcome) => {
+                            handle_runtime_outcome(&bot, &executor, outcome).await;
                         }
                         Err(err) => {
                             error!(error = %err, "failed to handle telegram update");
