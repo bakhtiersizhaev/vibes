@@ -322,6 +322,68 @@ fn returns_prompt_ready_from_caption_without_text() {
 }
 
 #[test]
+fn trims_caption_before_routing_prompt() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Direct(408258968),
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"
+        {
+          "message": {
+            "chat": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "type": "private",
+              "username": "hirrolot"
+            },
+            "date": 1581448857,
+            "from": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "is_bot": false,
+              "language_code": "en",
+              "username": "hirrolot"
+            },
+            "message_id": 156,
+            "caption": "   continue parser from caption   ",
+            "photo": [
+              {
+                "file_id": "id",
+                "file_unique_id": "uq",
+                "width": 1,
+                "height": 1
+              }
+            ]
+          },
+          "update_id": 306197400
+        }
+        "#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::PromptReady { prompt, .. } = outcome else {
+        panic!("expected prompt-ready outcome");
+    };
+    assert_eq!(prompt, "continue parser from caption");
+}
+
+#[test]
 fn sends_resume_reply_into_existing_topic_thread() {
     let controller = controller();
     let requester = FakeRequester::default();
