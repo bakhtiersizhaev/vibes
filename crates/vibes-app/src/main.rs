@@ -11,7 +11,7 @@ mod main_listener_scope_tests;
 #[cfg(test)]
 mod main_loop_shutdown_tests;
 #[cfg(test)]
-mod main_next_listener_topic_tests;
+mod main_next_listener_topic_plain_tests;
 #[cfg(test)]
 mod main_next_listener_forum_plain_tests;
 #[cfg(test)]
