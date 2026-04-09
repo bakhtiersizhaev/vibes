@@ -12,8 +12,11 @@ use crate::main_support::{codex_request_and_cwd, rendered_or_default};
 
 #[allow(unused_imports)]
 pub(crate) use crate::main_runtime_handlers::{
-    handle_listener_item, handle_next_listener_event, handle_prompt_ready, handle_runtime_outcome,
-    handle_update,
+    handle_listener_item, handle_next_listener_event, handle_update,
+};
+#[allow(unused_imports)]
+pub(crate) use crate::main_runtime_outcome::{
+    handle_prompt_ready, handle_runtime_outcome,
 };
 
 pub(crate) struct BotTopicManager {
