@@ -262,13 +262,28 @@ async fn run_polling_loop<S>(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_runtime_components, handle_next_listener_event, run_polling_loop};
+    use super::{
+        build_runtime_components, handle_next_listener_event, handle_runtime_outcome,
+        run_polling_loop,
+    };
     use std::time::{SystemTime, UNIX_EPOCH};
     use teloxide::{ApiError, Bot, RequestError, types::Update};
     use tokio_stream::iter;
-    use vibes_app::{TelegramExecutionError, TelegramPromptExecutor};
+    use vibes_app::{RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor};
 
     struct NoopExecutor;
+
+    struct PanicExecutor;
+
+    impl TelegramPromptExecutor for PanicExecutor {
+        fn execute_prompt(
+            &self,
+            _binding: &vibes_core::SessionBinding,
+            _prompt: &str,
+        ) -> Result<String, TelegramExecutionError> {
+            panic!("executor should not run");
+        }
+    }
 
     impl TelegramPromptExecutor for NoopExecutor {
         fn execute_prompt(
@@ -278,6 +293,21 @@ mod tests {
         ) -> Result<String, TelegramExecutionError> {
             Ok("noop".to_owned())
         }
+    }
+
+    #[tokio::test]
+    async fn handle_runtime_outcome_keeps_replied_without_executor_use() {
+        let bot = Bot::new("123456:TESTTOKEN");
+        let executor = PanicExecutor;
+        let outcome = RuntimeOutcome::Replied {
+            target: vibes_telegram::ReplyTarget {
+                chat_id: 408258968,
+                message_thread_id: None,
+            },
+            text: "already replied".to_owned(),
+        };
+
+        handle_runtime_outcome(&bot, &executor, outcome).await;
     }
 
     #[test]
