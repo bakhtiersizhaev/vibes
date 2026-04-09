@@ -351,6 +351,14 @@ mod tests {
         assert_eq!(workspace_root, ".");
         assert_eq!(db_path, "/tmp/custom.sqlite3");
     }
+
+    #[test]
+    fn runtime_paths_preserve_empty_string_overrides() {
+        let (workspace_root, db_path) = runtime_paths(Some(String::new()), Some(String::new()));
+
+        assert_eq!(workspace_root, "");
+        assert_eq!(db_path, "");
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
