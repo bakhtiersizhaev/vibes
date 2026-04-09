@@ -1769,6 +1769,66 @@ mod tests {
         }
     }
 
+    async fn run_polling_loop_keeps_running_through_non_message_then_message_until_stream_end() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let non_message: Update = serde_json::from_str(
+            r#"{
+                "update_id": 102,
+                "callback_query": {
+                    "id": "abc123",
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "chat_instance": "instance",
+                    "data": "noop"
+                }
+            }"#,
+        )
+        .unwrap();
+        let message: Update = serde_json::from_str(
+            r#"{
+                "update_id": 103,
+                "message": {
+                    "message_id": 11,
+                    "date": 1710000000,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "hello"
+                }
+            }"#,
+        )
+        .unwrap();
+        let stream = iter(vec![Ok(non_message), Ok(message)]);
+
+        run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
     async fn run_polling_loop_keeps_running_through_non_message_until_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
