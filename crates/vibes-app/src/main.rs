@@ -1769,6 +1769,7 @@ mod tests {
         }
     }
 
+    #[tokio::test]
     async fn run_polling_loop_keeps_running_through_message_then_non_message_until_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1889,6 +1890,7 @@ mod tests {
         }
     }
 
+    #[tokio::test]
     async fn run_polling_loop_keeps_running_through_non_message_until_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
