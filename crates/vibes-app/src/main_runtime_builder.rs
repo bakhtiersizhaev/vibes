@@ -5,7 +5,7 @@ use vibes_store::SqliteBindingStore;
 use crate::main_runtime_controller::{RuntimeController, build_runtime_controller};
 use crate::main_runtime_topics::BotTopicManager;
 use crate::main_runtime_store::open_sqlite_store;
-use crate::main_startup_context::build_startup_context;
+use crate::main_startup_context::{StartupContext, build_startup_context};
 
 pub(crate) struct RuntimeBootstrap {
     pub(crate) bot: Bot,
@@ -16,7 +16,12 @@ pub(crate) struct RuntimeBootstrap {
 }
 
 pub(crate) async fn build_runtime_bootstrap() -> anyhow::Result<RuntimeBootstrap> {
-    let (bot, bot_username, workspace_root, db_path) = build_startup_context().await?;
+    let StartupContext {
+        bot,
+        bot_username,
+        workspace_root,
+        db_path,
+    } = build_startup_context().await?;
     let (_store, runtime, _topics, controller) = build_runtime_components(&bot, &db_path)?;
     Ok(RuntimeBootstrap {
         bot,

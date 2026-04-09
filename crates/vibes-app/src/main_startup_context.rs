@@ -8,7 +8,14 @@ use teloxide::{
 
 use crate::main_support::{bot_username, runtime_paths};
 
-pub(crate) async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
+pub(crate) struct StartupContext {
+    pub(crate) bot: Bot,
+    pub(crate) bot_username: Option<String>,
+    pub(crate) workspace_root: String,
+    pub(crate) db_path: String,
+}
+
+pub(crate) async fn build_startup_context() -> anyhow::Result<StartupContext> {
     let bot = Bot::from_env();
     startup_context_from_get_me(
         bot.clone(),
@@ -24,7 +31,7 @@ pub(crate) async fn startup_context_from_get_me(
     me_result: Result<teloxide::types::Me, teloxide::RequestError>,
     workspace_root_override: Option<String>,
     db_path_override: Option<String>,
-) -> anyhow::Result<(Bot, Option<String>, String, String)> {
+) -> anyhow::Result<StartupContext> {
     let me = me_result.context("get_me failed")?;
     Ok(startup_context_from_parts(
         bot,
@@ -39,8 +46,13 @@ pub(crate) fn startup_context_from_parts(
     user: &User,
     workspace_root_override: Option<String>,
     db_path_override: Option<String>,
-) -> (Bot, Option<String>, String, String) {
+) -> StartupContext {
     let bot_username = bot_username(user);
     let (workspace_root, db_path) = runtime_paths(workspace_root_override, db_path_override);
-    (bot, bot_username, workspace_root, db_path)
+    StartupContext {
+        bot,
+        bot_username,
+        workspace_root,
+        db_path,
+    }
 }
