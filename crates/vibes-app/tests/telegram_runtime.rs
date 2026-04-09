@@ -405,6 +405,86 @@ fn caption_prompt_executes_and_replies_in_direct_chat() {
 }
 
 #[test]
+fn caption_prompt_execution_failure_replies_in_direct_chat() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Direct(408258968),
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Err("boom".to_owned())),
+    };
+    let update = parse_update(
+        r#"
+        {
+          "message": {
+            "chat": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "type": "private",
+              "username": "hirrolot"
+            },
+            "date": 1581448857,
+            "from": {
+              "first_name": "Hirrolot",
+              "id": 408258968,
+              "is_bot": false,
+              "language_code": "en",
+              "username": "hirrolot"
+            },
+            "message_id": 158,
+            "caption": "continue parser from caption",
+            "photo": [
+              {
+                "file_id": "id",
+                "file_unique_id": "uq",
+                "width": 1,
+                "height": 1
+              }
+            ]
+          },
+          "update_id": 306197402
+        }
+        "#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let completion =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("completion ok");
+
+    let RuntimeOutcome::Replied { target, text } = completion else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, None);
+    assert!(text.contains("Codex execution failed: telegram execution failed: boom"));
+
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, 408258968);
+    assert_eq!(sent[0].1, None);
+    assert!(
+        sent[0]
+            .2
+            .contains("Codex execution failed: telegram execution failed: boom")
+    );
+}
+
+#[test]
 fn trims_caption_before_routing_prompt() {
     let store = InMemoryBindingStore::default();
     store.upsert_binding(vibes_core::SessionBinding {
