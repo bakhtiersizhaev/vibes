@@ -63,6 +63,8 @@ mod main_loop_topic_new_tests;
 #[cfg(test)]
 mod main_loop_topic_resume_tests;
 #[cfg(test)]
+mod main_prompt_success_tests;
+#[cfg(test)]
 mod main_prompt_tests;
 mod main_runtime;
 mod main_runtime_handlers;
