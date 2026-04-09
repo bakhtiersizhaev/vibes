@@ -17,7 +17,7 @@ mod main_listener_error_tests;
 #[cfg(test)]
 mod main_next_listener_topic_tests;
 #[cfg(test)]
-mod main_next_listener_forum_tests;
+mod main_next_listener_forum_plain_tests;
 #[cfg(test)]
 mod main_next_listener_plain_tests;
 #[cfg(test)]
