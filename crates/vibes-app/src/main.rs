@@ -177,6 +177,49 @@ async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String,
     Ok((bot, bot_username, workspace_root, db_path))
 }
 
+async fn run_polling_loop<S>(
+    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    stream: S,
+    bot_username: Option<&str>,
+    workspace_root: &str,
+) where
+    S: tokio_stream::Stream<Item = Result<teloxide::types::Update, teloxide::RequestError>>,
+{
+    pin!(stream);
+
+    let shutdown = tokio::signal::ctrl_c();
+    pin!(shutdown);
+
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => {
+                info!("ctrl-c received, stopping polling loop");
+                break;
+            }
+            update = stream.next() => {
+                let Some(update) = update else {
+                    info!("polling listener stream ended");
+                    break;
+                };
+
+                handle_listener_item(
+                    controller,
+                    bot,
+                    executor,
+                    update,
+                    bot_username,
+                    workspace_root,
+                )
+                .await;
+            }
+        }
+    }
+
+    info!("vibes polling loop stopped");
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -195,38 +238,17 @@ async fn main() -> anyhow::Result<()> {
 
     let mut listener = update_listeners::polling_default(bot.clone()).await;
     let stream = listener.as_stream();
-    pin!(stream);
 
     info!(bot_username = ?bot_username, db_path, workspace_root, "vibes polling loop started");
 
-    let shutdown = tokio::signal::ctrl_c();
-    pin!(shutdown);
-
-    loop {
-        tokio::select! {
-            _ = &mut shutdown => {
-                info!("ctrl-c received, stopping polling loop");
-                break;
-            }
-            update = stream.next() => {
-                let Some(update) = update else {
-                    info!("polling listener stream ended");
-                    break;
-                };
-
-                handle_listener_item(
-                    &controller,
-                    &bot,
-                    &executor,
-                    update,
-                    bot_username.as_deref(),
-                    &workspace_root,
-                )
-                .await;
-            }
-        }
-    }
-
-    info!("vibes polling loop stopped");
+    run_polling_loop(
+        &controller,
+        &bot,
+        &executor,
+        stream,
+        bot_username.as_deref(),
+        &workspace_root,
+    )
+    .await;
     Ok(())
 }
