@@ -15,7 +15,7 @@ mod main_next_listener_topic_message_tests;
 #[cfg(test)]
 mod main_next_listener_forum_message_tests;
 #[cfg(test)]
-mod main_next_listener_core_tests;
+mod main_next_listener_basic_tests;
 #[cfg(test)]
 mod main_next_listener_direct_new_tests;
 #[cfg(test)]
