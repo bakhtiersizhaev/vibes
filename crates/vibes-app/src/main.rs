@@ -33,6 +33,8 @@ mod main_next_listener_forum_resume_tests;
 #[cfg(test)]
 mod main_loop_event_tests;
 #[cfg(test)]
+mod main_loop_stream_end_tests;
+#[cfg(test)]
 mod main_loop_transition_tests;
 #[cfg(test)]
 mod main_loop_non_message_tests;

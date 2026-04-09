@@ -22,7 +22,7 @@ mod tests {
         std::env::temp_dir().join(format!("vibes-loop-event-tests-{pid}-{n}.sqlite3"))
     }
     #[tokio::test]
-    async fn run_polling_loop_processes_multiple_events_before_stream_end() {
+    async fn run_polling_loop_returns_immediately_on_empty_stream() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -32,11 +32,31 @@ mod tests {
         let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
-        let update1: Update = serde_json::from_str(
+        let stream = iter(Vec::<Result<Update, RequestError>>::new());
+
+        run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn run_polling_loop_processes_event_and_returns_on_stream_end() {
+        let db_path = unique_db_path();
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (_store, _runtime, _topics, controller) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 100,
+                "update_id": 19,
                 "message": {
-                    "message_id": 200,
+                    "message_id": 28,
                     "date": 1710000000,
                     "chat": {
                         "id": 408258968,
@@ -53,49 +73,13 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let update2: Update = serde_json::from_str(
-            r#"{
-                "update_id": 101,
-                "callback_query": {
-                    "id": "cb-1",
-                    "from": {
-                        "id": 408258968,
-                        "is_bot": false,
-                        "first_name": "Bakhtier"
-                    },
-                    "chat_instance": "ci-1",
-                    "data": "noop"
-                }
-            }"#,
-        )
-        .unwrap();
-        let update3: Update = serde_json::from_str(
-            r#"{
-                "update_id": 102,
-                "message": {
-                    "message_id": 201,
-                    "date": 1710000001,
-                    "chat": {
-                        "id": 408258968,
-                        "type": "private",
-                        "first_name": "Bakhtier"
-                    },
-                    "from": {
-                        "id": 408258968,
-                        "is_bot": false,
-                        "first_name": "Bakhtier"
-                    },
-                    "caption": "hi caption"
-                }
-            }"#,
-        )
-        .unwrap();
-        let stream = iter(vec![Ok(update1), Ok(update2), Ok(update3)]);
 
+        let stream = iter(vec![Ok(update)]);
         run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
         }
     }
-}
+
+    }
