@@ -1,11 +1,11 @@
-use teloxide::update_listeners::AsUpdateStream;
 use teloxide::update_listeners;
+use teloxide::update_listeners::AsUpdateStream;
 use tracing::info;
 
 #[cfg(test)]
-mod main_listener_tests;
-#[cfg(test)]
 mod main_listener_command_tests;
+#[cfg(test)]
+mod main_listener_core_tests;
 #[cfg(test)]
 mod main_loop_tests;
 #[cfg(test)]

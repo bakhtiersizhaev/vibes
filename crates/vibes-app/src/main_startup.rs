@@ -1,7 +1,10 @@
 use std::env;
 
 use anyhow::Context;
-use teloxide::{prelude::{Bot, Request, Requester}, types::User};
+use teloxide::{
+    prelude::{Bot, Request, Requester},
+    types::User,
+};
 use vibes_app::{AppController, AppService};
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;

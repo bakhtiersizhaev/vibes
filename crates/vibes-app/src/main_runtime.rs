@@ -6,9 +6,8 @@ use tokio::pin;
 use tokio_stream::StreamExt;
 use tracing::{error, info};
 use vibes_app::{
-    AppController, AppServiceError, RuntimeOutcome, TelegramExecutionError,
-    TelegramPromptExecutor, TelegramRequester, TopicManager, complete_runtime_outcome,
-    run_telegram_update,
+    AppController, AppServiceError, RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor,
+    TelegramRequester, TopicManager, complete_runtime_outcome, run_telegram_update,
 };
 use vibes_codex::CodexExecRunner;
 

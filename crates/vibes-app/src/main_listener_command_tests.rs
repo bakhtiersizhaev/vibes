@@ -416,5 +416,4 @@ mod tests {
             std::fs::remove_file(db_path).unwrap();
         }
     }
-
 }

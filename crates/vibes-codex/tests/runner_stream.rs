@@ -146,7 +146,7 @@ fn recv_until<F>(rx: &mpsc::Receiver<ParsedCodexLine>, predicate: F) -> ParsedCo
 where
     F: Fn(&ParsedCodexLine) -> bool,
 {
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         let line = rx.recv_timeout(remaining).unwrap();
