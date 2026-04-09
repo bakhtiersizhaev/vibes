@@ -1,5 +1,3 @@
-use teloxide::prelude::Bot;
-
 #[allow(unused_imports)]
 pub(crate) use crate::main_runtime_handlers::{
     handle_listener_item, handle_next_listener_event, handle_update,
