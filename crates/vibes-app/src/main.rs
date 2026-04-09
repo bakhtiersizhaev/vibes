@@ -274,12 +274,14 @@ mod tests {
             .join("vibes.sqlite3");
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let rendered = match build_runtime_components(&bot, db_path.to_str().unwrap()) {
+        let path_string = db_path.to_str().unwrap().to_owned();
+        let rendered = match build_runtime_components(&bot, &path_string) {
             Ok(_) => panic!("expected sqlite open failure"),
             Err(err) => err.to_string(),
         };
 
         assert!(rendered.contains("failed to open sqlite store"));
+        assert!(rendered.contains(&path_string));
     }
 }
 
