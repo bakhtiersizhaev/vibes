@@ -1305,6 +1305,57 @@ fn returns_request_error_when_resume_reply_send_fails() {
 }
 
 #[test]
+fn returns_request_error_when_resume_reply_thread_fallback_also_fails() {
+    let controller = controller();
+    let requester = ThreadThenChatFailRequester;
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 8,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134549,
+                "message_thread_id": 900,
+                "text": "/resume rust-rewrite"
+            },
+            "update_id": 439432603
+        }"#,
+    );
+
+    let err = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect_err("fallback chain should fail");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: chat send boom")
+    );
+}
+
+#[test]
 fn falls_back_to_chat_reply_for_resume_reply_when_thread_send_fails() {
     let controller = controller();
     let requester = ThreadFailRequester::default();
