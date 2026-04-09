@@ -166,6 +166,17 @@ fn build_runtime_components(
     Ok((controller, runtime))
 }
 
+async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
+    let bot = Bot::from_env();
+    let me = bot.get_me().send().await.context("get_me failed")?;
+    let bot_username = bot_username(&me.user);
+    let (workspace_root, db_path) = runtime_paths(
+        env::var("VIBES_WORKSPACE_ROOT").ok(),
+        env::var("VIBES_DB_PATH").ok(),
+    );
+    Ok((bot, bot_username, workspace_root, db_path))
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -177,13 +188,7 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
-    let bot = Bot::from_env();
-    let me = bot.get_me().send().await.context("get_me failed")?;
-    let bot_username = bot_username(&me.user);
-    let (workspace_root, db_path) = runtime_paths(
-        env::var("VIBES_WORKSPACE_ROOT").ok(),
-        env::var("VIBES_DB_PATH").ok(),
-    );
+    let (bot, bot_username, workspace_root, db_path) = build_startup_context().await?;
 
     let (controller, runtime) = build_runtime_components(&bot, &db_path)?;
     let executor = CodexPromptExecutor { runner: &runtime };
