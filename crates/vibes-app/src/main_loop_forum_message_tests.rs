@@ -19,11 +19,11 @@ mod tests {
     fn unique_db_path() -> PathBuf {
         let pid = std::process::id();
         let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("vibes-loop-topic-message-tests-{pid}-{n}.sqlite3"))
+        std::env::temp_dir().join(format!("vibes-loop-forum-message-tests-{pid}-{n}.sqlite3"))
     }
 
     #[tokio::test]
-    async fn run_polling_loop_keeps_running_through_topic_message_until_stream_end() {
+    async fn run_polling_loop_keeps_running_through_forum_root_message_until_stream_end() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -35,10 +35,9 @@ mod tests {
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 23,
+                "update_id": 25,
                 "message": {
-                    "message_id": 31,
-                    "message_thread_id": 900,
+                    "message_id": 33,
                     "date": 1710000000,
                     "chat": {
                         "id": -1001293752024,
@@ -51,7 +50,7 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "text": "hello from topic text"
+                    "text": "hello from forum root text"
                 }
             }"#,
         )
@@ -66,7 +65,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_polling_loop_keeps_running_through_topic_caption_until_stream_end() {
+    async fn run_polling_loop_keeps_running_through_forum_root_caption_until_stream_end() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -78,10 +77,9 @@ mod tests {
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 24,
+                "update_id": 26,
                 "message": {
-                    "message_id": 32,
-                    "message_thread_id": 900,
+                    "message_id": 34,
                     "date": 1710000000,
                     "chat": {
                         "id": -1001293752024,
@@ -94,7 +92,7 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "caption": "hello from topic caption"
+                    "caption": "hello from forum root caption"
                 }
             }"#,
         )
@@ -107,4 +105,5 @@ mod tests {
             std::fs::remove_file(db_path).unwrap();
         }
     }
+
 }
