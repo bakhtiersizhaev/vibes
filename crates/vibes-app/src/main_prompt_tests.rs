@@ -147,7 +147,7 @@ mod tests {
         assert!(requester.sent.lock().unwrap().is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn handle_prompt_ready_logs_completion_error() {
         let requester = RecordingRequester {
             sent: Mutex::new(Vec::new()),

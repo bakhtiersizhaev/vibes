@@ -21,7 +21,7 @@ mod tests {
         std::env::temp_dir().join(format!("vibes-listener-tests-{pid}-{n}.sqlite3"))
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn handle_listener_item_logs_request_error() {
         let db_path = unique_db_path();
         if db_path.exists() {
