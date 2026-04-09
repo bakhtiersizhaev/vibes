@@ -334,6 +334,15 @@ mod tests {
         assert_eq!(workspace_root, "/tmp/custom-workspace");
         assert_eq!(db_path, "/tmp/custom.sqlite3");
     }
+
+    #[test]
+    fn runtime_paths_preserve_workspace_override_with_default_db() {
+        let (workspace_root, db_path) =
+            runtime_paths(Some("/tmp/custom-workspace".to_owned()), None);
+
+        assert_eq!(workspace_root, "/tmp/custom-workspace");
+        assert_eq!(db_path, "vibes.sqlite3");
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
