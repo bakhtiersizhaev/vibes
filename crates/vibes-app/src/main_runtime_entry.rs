@@ -1,5 +1,5 @@
 use crate::main_runtime_builder::build_runtime_bootstrap;
-use crate::main_runtime_components::CodexPromptExecutor;
+use crate::main_runtime_executor::CodexPromptExecutor;
 use crate::main_runtime_loop::start_polling_loop;
 use crate::main_tracing::init_tracing;
 
