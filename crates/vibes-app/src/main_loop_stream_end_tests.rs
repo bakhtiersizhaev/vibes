@@ -1,7 +1,7 @@
 use teloxide::{Bot, RequestError, types::Update};
 use tokio_stream::iter;
 
-use crate::main_runtime::run_polling_loop;
+use crate::main_runtime_loop::run_polling_loop;
 use crate::main_runtime_components::build_runtime_components;
 use crate::main_test_support::{NoopExecutor, unique_db_path};
 

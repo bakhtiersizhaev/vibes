@@ -67,8 +67,6 @@ mod main_loop_shutdown_signal_tests;
 mod main_prompt_success_tests;
 #[cfg(test)]
 mod main_prompt_tests;
-#[cfg(test)]
-mod main_runtime;
 mod main_runtime_components;
 mod main_runtime_entry;
 mod main_tracing;

@@ -1,7 +1,7 @@
 use teloxide::Bot;
 use vibes_app::RuntimeOutcome;
 
-use crate::main_runtime::handle_runtime_outcome;
+use crate::main_runtime_outcome::handle_runtime_outcome;
 use crate::main_test_support::PanicExecutor;
 
 #[cfg(test)]

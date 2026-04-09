@@ -1,6 +1,6 @@
 use teloxide::{Bot, types::Update};
 
-use crate::main_runtime::handle_listener_item;
+use crate::main_runtime_listener::handle_listener_item;
 use crate::main_runtime_components::build_runtime_components;
 use crate::main_test_support::{PanicExecutor, unique_db_path};
 
