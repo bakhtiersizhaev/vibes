@@ -754,6 +754,75 @@ fn sends_reply_for_new_session_update_from_trimmed_caption_inside_existing_topic
 }
 
 #[test]
+fn returns_request_error_when_trimmed_caption_new_session_reply_send_fails_inside_existing_topic() {
+    let controller = controller();
+    let requester = FakeRequester {
+        sent: Mutex::new(Vec::new()),
+        fail: Mutex::new(Some("send boom".to_owned())),
+    };
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "caption": "   /new rust-rewrite   ",
+                "caption_entities": [
+                    {
+                        "length": 8,
+                        "offset": 3,
+                        "type": "bot_command"
+                    }
+                ],
+                "photo": [
+                    {
+                        "file_id": "id",
+                        "file_unique_id": "uq",
+                        "width": 1,
+                        "height": 1
+                    }
+                ],
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134539,
+                "message_thread_id": 900
+            },
+            "update_id": 439432592
+        }"#,
+    );
+
+    let err = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect_err("send failure expected");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: send boom")
+    );
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn sends_reply_for_new_session_update_from_caption_inside_existing_topic() {
     let controller = controller();
     let requester = FakeRequester::default();
