@@ -3,6 +3,8 @@ use teloxide::update_listeners::AsUpdateStream;
 use tracing::info;
 
 #[cfg(test)]
+mod main_listener_forum_new_tests;
+#[cfg(test)]
 mod main_listener_forum_resume_command_tests;
 #[cfg(test)]
 mod main_listener_topic_command_tests;

@@ -18,11 +18,11 @@ mod tests {
     fn unique_db_path() -> PathBuf {
         let pid = std::process::id();
         let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("vibes-listener-forum-resume-command-tests-{pid}-{n}.sqlite3"))
+        std::env::temp_dir().join(format!("vibes-listener-forum-new-tests-{pid}-{n}.sqlite3"))
     }
 
     #[tokio::test]
-    async fn handle_listener_item_processes_forum_root_resume_caption_without_executor_use() {
+    async fn handle_listener_item_processes_forum_root_new_command_without_executor_use() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -34,10 +34,10 @@ mod tests {
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 1014,
+                "update_id": 1011,
                 "message": {
-                    "message_id": 792,
-                    "date": 1710001126,
+                    "message_id": 789,
+                    "date": 1710001123,
                     "chat": {
                         "id": -1001293752024,
                         "type": "supergroup",
@@ -49,17 +49,11 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "caption": "/resume rust-rewrite",
-                    "caption_entities": [{
+                    "text": "/new rust-rewrite",
+                    "entities": [{
                         "type": "bot_command",
                         "offset": 0,
-                        "length": 7
-                    }],
-                    "photo": [{
-                        "file_id": "abc",
-                        "file_unique_id": "uq2",
-                        "width": 100,
-                        "height": 100
+                        "length": 4
                     }]
                 }
             }"#,
@@ -74,7 +68,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_listener_item_processes_forum_root_resume_command_without_executor_use() {
+    async fn handle_listener_item_processes_forum_root_new_caption_without_executor_use() {
         let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
@@ -86,10 +80,10 @@ mod tests {
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
             r#"{
-                "update_id": 1013,
+                "update_id": 1012,
                 "message": {
-                    "message_id": 791,
-                    "date": 1710001125,
+                    "message_id": 790,
+                    "date": 1710001124,
                     "chat": {
                         "id": -1001293752024,
                         "type": "supergroup",
@@ -101,11 +95,17 @@ mod tests {
                         "is_bot": false,
                         "first_name": "Bakhtier"
                     },
-                    "text": "/resume rust-rewrite",
-                    "entities": [{
+                    "caption": "/new rust-rewrite",
+                    "caption_entities": [{
                         "type": "bot_command",
                         "offset": 0,
-                        "length": 7
+                        "length": 4
+                    }],
+                    "photo": [{
+                        "file_id": "abc",
+                        "file_unique_id": "uq1",
+                        "width": 100,
+                        "height": 100
                     }]
                 }
             }"#,
