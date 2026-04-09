@@ -67,6 +67,10 @@ fn runtime_paths(workspace_root: Option<String>, db_path: Option<String>) -> (St
     )
 }
 
+fn bot_username(user: &teloxide::types::User) -> Option<String> {
+    user.username.clone()
+}
+
 impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
     fn execute_prompt(
         &self,
@@ -83,7 +87,7 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{codex_request_and_cwd, rendered_or_default, runtime_paths};
+    use super::{bot_username, codex_request_and_cwd, rendered_or_default, runtime_paths};
     use vibes_core::{ChatScope, SessionBinding, SessionHandle};
 
     #[test]
@@ -395,6 +399,24 @@ mod tests {
         assert_eq!(workspace_root, "");
         assert_eq!(db_path, "/tmp/custom.sqlite3");
     }
+
+    #[test]
+    fn bot_username_returns_some_when_present() {
+        let user: teloxide::types::User = serde_json::from_str(
+            r#"{"id":1,"is_bot":true,"first_name":"Vibes","username":"vibes_bot"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(bot_username(&user).as_deref(), Some("vibes_bot"));
+    }
+
+    #[test]
+    fn bot_username_returns_none_when_missing() {
+        let user: teloxide::types::User =
+            serde_json::from_str(r#"{"id":1,"is_bot":true,"first_name":"Vibes"}"#).unwrap();
+
+        assert_eq!(bot_username(&user), None);
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -410,7 +432,7 @@ async fn main() -> anyhow::Result<()> {
 
     let bot = Bot::from_env();
     let me = bot.get_me().send().await.context("get_me failed")?;
-    let bot_username = me.user.username.clone();
+    let bot_username = bot_username(&me.user);
     let (workspace_root, db_path) = runtime_paths(
         env::var("VIBES_WORKSPACE_ROOT").ok(),
         env::var("VIBES_DB_PATH").ok(),
