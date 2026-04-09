@@ -11,7 +11,8 @@ use tokio_stream::StreamExt;
 use tracing::{error, info};
 use vibes_app::{
     AppController, AppService, AppServiceError, RuntimeOutcome, TelegramExecutionError,
-    TelegramPromptExecutor, TopicManager, complete_runtime_outcome, run_telegram_update,
+    TelegramPromptExecutor, TelegramRequester, TopicManager, complete_runtime_outcome,
+    run_telegram_update,
 };
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
@@ -57,13 +58,16 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
     }
 }
 
-async fn handle_prompt_ready(
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
+async fn handle_prompt_ready<Q, E>(
+    requester: &Q,
+    executor: &E,
     target: vibes_telegram::ReplyTarget,
     binding: vibes_core::SessionBinding,
     prompt: String,
-) {
+) where
+    Q: TelegramRequester,
+    E: TelegramPromptExecutor,
+{
     info!(
         chat_id = target.chat_id,
         thread_id = target.message_thread_id,
@@ -74,7 +78,7 @@ async fn handle_prompt_ready(
     );
 
     match complete_runtime_outcome(
-        bot,
+        requester,
         executor,
         RuntimeOutcome::PromptReady {
             target,
@@ -264,14 +268,43 @@ async fn run_polling_loop<S>(
 mod tests {
     use super::{
         build_runtime_components, handle_listener_item, handle_next_listener_event,
-        handle_runtime_outcome, handle_update, run_polling_loop,
+        handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
     };
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{
+        sync::Mutex,
+        time::{SystemTime, UNIX_EPOCH},
+    };
     use teloxide::{ApiError, Bot, RequestError, types::Update};
     use tokio_stream::iter;
-    use vibes_app::{RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor};
+    use vibes_app::{
+        RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError,
+        TelegramRequester,
+    };
 
     struct NoopExecutor;
+
+    struct RecordingRequester {
+        sent: Mutex<Vec<(vibes_telegram::ReplyTarget, String)>>,
+        fail: Mutex<Option<String>>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl TelegramRequester for RecordingRequester {
+        async fn send_text(
+            &self,
+            target: &vibes_telegram::ReplyTarget,
+            text: &str,
+        ) -> Result<(), TelegramRequestError> {
+            if let Some(message) = self.fail.lock().unwrap().clone() {
+                return Err(TelegramRequestError::new(message));
+            }
+            self.sent
+                .lock()
+                .unwrap()
+                .push((target.clone(), text.to_owned()));
+            Ok(())
+        }
+    }
 
     struct PanicExecutor;
 
@@ -316,6 +349,38 @@ mod tests {
         };
 
         handle_runtime_outcome(&bot, &executor, outcome).await;
+    }
+
+    #[tokio::test]
+    async fn handle_prompt_ready_ignores_completion_error_without_panicking() {
+        let requester = RecordingRequester {
+            sent: Mutex::new(Vec::new()),
+            fail: Mutex::new(Some("send boom".to_owned())),
+        };
+        let executor = NoopExecutor;
+        let target = vibes_telegram::ReplyTarget {
+            chat_id: 408258968,
+            message_thread_id: None,
+        };
+        let binding = vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Direct(408258968),
+            workspace_root: "/workspace".to_owned(),
+            session: vibes_core::SessionHandle {
+                codex_session_id: "codex-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+        };
+
+        handle_prompt_ready(
+            &requester,
+            &executor,
+            target,
+            binding,
+            "continue parser work".to_owned(),
+        )
+        .await;
+
+        assert!(requester.sent.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
