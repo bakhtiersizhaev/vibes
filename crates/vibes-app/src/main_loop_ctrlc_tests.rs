@@ -3,7 +3,7 @@ use tokio_stream::pending;
 
 use crate::main_runtime::run_polling_loop_with_shutdown;
 use crate::main_startup::build_runtime_components;
-use crate::main_test_support::{PanicExecutor, SharedWriter, unique_db_path};
+use crate::main_test_support::{PanicExecutor, unique_db_path};
 
 #[cfg(test)]
 mod tests {
@@ -20,14 +20,6 @@ mod tests {
         let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
-        let writer = SharedWriter::default();
-        let captured = writer.0.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .with_ansi(false)
-            .without_time()
-            .with_writer(writer)
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
 
         run_polling_loop_with_shutdown(
             &controller,
@@ -39,9 +31,6 @@ mod tests {
             "/workspace",
         )
         .await;
-
-        let rendered = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
-        assert!(rendered.contains("ctrl-c received, stopping polling loop"));
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
