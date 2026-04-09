@@ -43,7 +43,7 @@ mod main_loop_forum_plain_message_tests;
 #[cfg(test)]
 mod main_loop_direct_new_tests;
 #[cfg(test)]
-mod main_loop_forum_new_command_tests;
+mod main_loop_forum_new_tests;
 #[cfg(test)]
 mod main_loop_forum_resume_tests;
 #[cfg(test)]
