@@ -238,6 +238,65 @@ fn sends_reply_for_new_session_update_in_direct_chat() {
 }
 
 #[test]
+fn returns_request_error_when_direct_new_session_reply_send_fails() {
+    let controller = controller();
+    let requester = FakeRequester {
+        sent: Mutex::new(Vec::new()),
+        fail: Mutex::new(Some("send boom".to_owned())),
+    };
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": 408258968,
+                    "first_name": "Baha",
+                    "type": "private",
+                    "username": "spacewhaleblues"
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 4,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "Baha",
+                    "id": 408258968,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134546,
+                "text": "/new rust-rewrite"
+            },
+            "update_id": 439432600
+        }"#,
+    );
+
+    let err = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect_err("send failure expected");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: send boom")
+    );
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn sends_reply_for_new_session_update() {
     let controller = controller();
     let requester = FakeRequester::default();
