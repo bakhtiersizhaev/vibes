@@ -1492,6 +1492,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_listener_item_processes_forum_root_message_without_executor_use() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let update: Update = serde_json::from_str(
+            r#"{
+                "update_id": 1009,
+                "message": {
+                    "message_id": 787,
+                    "date": 1710001121,
+                    "chat": {
+                        "id": -1001293752024,
+                        "type": "supergroup",
+                        "title": "Vibes",
+                        "is_forum": true
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "continue parser from forum root"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        handle_listener_item(&controller, &bot, &executor, Ok(update), None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn handle_listener_item_processes_message_without_executor_use() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
