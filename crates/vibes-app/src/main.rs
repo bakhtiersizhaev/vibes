@@ -73,6 +73,7 @@ mod main_prompt_tests;
 mod main_runtime;
 mod main_runtime_components;
 mod main_runtime_handlers;
+mod main_runtime_loop;
 mod main_runtime_outcome;
 mod main_startup;
 mod main_support;
@@ -89,7 +90,8 @@ mod main_codex_request_direct_tests;
 #[cfg(test)]
 mod main_runtime_path_tests;
 
-use main_runtime::{CodexPromptExecutor, run_polling_loop};
+use main_runtime::CodexPromptExecutor;
+use main_runtime_loop::run_polling_loop;
 use main_startup::{build_runtime_components, build_startup_context};
 
 #[tokio::main(flavor = "multi_thread")]
