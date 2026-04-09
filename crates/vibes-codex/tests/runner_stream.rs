@@ -41,7 +41,18 @@ fn streams_events_before_process_exit() {
     let script_path = write_script(
         temp.path(),
         "stream-codex.sh",
-        "#!/bin/sh\nprintf '{\"type\":\"thread.started\",\"thread\":{\"id\":\"sess-9\"}}\\n'\nsleep 0.2\nprintf 'plain-noise\\n'\nsleep 0.2\nprintf '{\"type\":\"assistant_message\",\"text\":\"done\"}\\n'\nsleep 0.2\nprintf '{\"type\":\"turn.completed\",\"success\":true}\\n'\n",
+        r#"#!/bin/sh
+python3 -u - <<'PY'
+import time
+print('{"type":"thread.started","thread":{"id":"sess-9"}}', flush=True)
+time.sleep(0.2)
+print('plain-noise', flush=True)
+time.sleep(0.2)
+print('{"type":"assistant_message","text":"done"}', flush=True)
+time.sleep(0.2)
+print('{"type":"turn.completed","success":true}', flush=True)
+PY
+"#,
     );
     let runner = CodexExecRunner::with_binary(script_path.to_string_lossy());
     let control = CodexRunControl::default();
