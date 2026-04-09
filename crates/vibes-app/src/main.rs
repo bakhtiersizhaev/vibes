@@ -148,6 +148,24 @@ async fn handle_listener_item(
     }
 }
 
+fn build_runtime_components(
+    bot: &Bot,
+    db_path: &str,
+) -> Result<
+    (
+        AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
+        CodexExecRunner,
+    ),
+    anyhow::Error,
+> {
+    let store = SqliteBindingStore::open(db_path)
+        .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
+    let runtime = CodexExecRunner::default();
+    let topics = BotTopicManager { bot: bot.clone() };
+    let controller = AppController::new(AppService::new(store, runtime.clone(), topics));
+    Ok((controller, runtime))
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -167,11 +185,7 @@ async fn main() -> anyhow::Result<()> {
         env::var("VIBES_DB_PATH").ok(),
     );
 
-    let store = SqliteBindingStore::open(&db_path)
-        .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
-    let runtime = CodexExecRunner::default();
-    let topics = BotTopicManager { bot: bot.clone() };
-    let controller = AppController::new(AppService::new(store, runtime.clone(), topics));
+    let (controller, runtime) = build_runtime_components(&bot, &db_path)?;
     let executor = CodexPromptExecutor { runner: &runtime };
 
     let mut listener = update_listeners::polling_default(bot.clone()).await;
