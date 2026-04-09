@@ -1306,6 +1306,74 @@ fn sends_resume_reply_in_direct_chat() {
 }
 
 #[test]
+fn returns_request_error_when_direct_resume_reply_send_fails() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Direct(408258968),
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester {
+        sent: Mutex::new(Vec::new()),
+        fail: Mutex::new(Some("send boom".to_owned())),
+    };
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": 408258968,
+                    "first_name": "Baha",
+                    "type": "private",
+                    "username": "spacewhaleblues"
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 8,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "Baha",
+                    "id": 408258968,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134548,
+                "text": "/resume rust-rewrite"
+            },
+            "update_id": 439432602
+        }"#,
+    );
+
+    let err = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect_err("send failure expected");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: send boom")
+    );
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn sends_resume_reply_into_existing_topic_thread() {
     let controller = controller();
     let requester = FakeRequester::default();
