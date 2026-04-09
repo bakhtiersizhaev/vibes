@@ -199,15 +199,29 @@ fn startup_context_from_parts(
     (bot, bot_username, workspace_root, db_path)
 }
 
-async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
-    let bot = Bot::from_env();
-    let me = bot.get_me().send().await.context("get_me failed")?;
+fn startup_context_from_get_me(
+    bot: Bot,
+    me_result: Result<teloxide::types::Me, teloxide::RequestError>,
+    workspace_root_override: Option<String>,
+    db_path_override: Option<String>,
+) -> anyhow::Result<(Bot, Option<String>, String, String)> {
+    let me = me_result.context("get_me failed")?;
     Ok(startup_context_from_parts(
         bot,
         &me.user,
+        workspace_root_override,
+        db_path_override,
+    ))
+}
+
+async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
+    let bot = Bot::from_env();
+    startup_context_from_get_me(
+        bot.clone(),
+        bot.get_me().send().await,
         env::var("VIBES_WORKSPACE_ROOT").ok(),
         env::var("VIBES_DB_PATH").ok(),
-    ))
+    )
 }
 
 async fn handle_next_listener_event(
@@ -280,7 +294,7 @@ mod tests {
     use super::{
         build_runtime_components, handle_listener_item, handle_next_listener_event,
         handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
-        startup_context_from_parts,
+        startup_context_from_get_me, startup_context_from_parts,
     };
     use std::{
         sync::Mutex,
@@ -2272,6 +2286,21 @@ mod tests {
         assert_eq!(bot_username, None);
         assert_eq!(workspace_root, "/workspace/custom");
         assert_eq!(db_path, "/tmp/custom.sqlite3");
+    }
+
+    #[test]
+    fn startup_context_from_get_me_wraps_error_with_context() {
+        let bot = Bot::new("123456:TESTTOKEN");
+        let error = startup_context_from_get_me(
+            bot,
+            Err(RequestError::Api(ApiError::Unknown("boom".to_owned()))),
+            None,
+            None,
+        )
+        .unwrap_err();
+
+        let rendered = format!("{error:#}");
+        assert!(rendered.contains("get_me failed"));
     }
 
     #[test]
