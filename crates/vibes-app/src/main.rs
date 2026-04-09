@@ -130,6 +130,12 @@ mod tests {
     }
 
     #[test]
+    fn rendered_or_default_preserves_tab_prefixed_non_empty_transcript() {
+        let rendered = "\tstep 1\nstep 2".to_owned();
+        assert_eq!(rendered_or_default(rendered.clone()), rendered);
+    }
+
+    #[test]
     fn rendered_or_default_keeps_padded_non_empty_transcript() {
         let rendered = "  done transcript  ".to_owned();
         assert_eq!(rendered_or_default(rendered.clone()), rendered);
