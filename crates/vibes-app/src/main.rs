@@ -39,7 +39,7 @@ mod main_loop_direct_message_tests;
 #[cfg(test)]
 mod main_loop_topic_plain_message_tests;
 #[cfg(test)]
-mod main_loop_forum_message_tests;
+mod main_loop_forum_plain_message_tests;
 #[cfg(test)]
 mod main_loop_direct_new_command_tests;
 #[cfg(test)]
