@@ -263,8 +263,8 @@ async fn run_polling_loop<S>(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_runtime_components, handle_next_listener_event, handle_runtime_outcome,
-        run_polling_loop,
+        build_runtime_components, handle_listener_item, handle_next_listener_event,
+        handle_runtime_outcome, run_polling_loop,
     };
     use std::time::{SystemTime, UNIX_EPOCH};
     use teloxide::{ApiError, Bot, RequestError, types::Update};
@@ -308,6 +308,37 @@ mod tests {
         };
 
         handle_runtime_outcome(&bot, &executor, outcome).await;
+    }
+
+    #[tokio::test]
+    async fn handle_listener_item_ignores_request_error_without_executor_use() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+
+        handle_listener_item(
+            &controller,
+            &bot,
+            &executor,
+            Err(RequestError::Api(ApiError::Unknown("boom".to_owned()))),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
     }
 
     #[test]
