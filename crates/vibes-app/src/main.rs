@@ -49,7 +49,7 @@ mod main_loop_forum_resume_tests;
 #[cfg(test)]
 mod main_loop_direct_resume_command_tests;
 #[cfg(test)]
-mod main_loop_topic_new_command_tests;
+mod main_loop_topic_new_tests;
 #[cfg(test)]
 mod main_loop_topic_resume_command_tests;
 #[cfg(test)]
