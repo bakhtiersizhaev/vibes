@@ -17,16 +17,19 @@ pub(crate) async fn build_runtime_bootstrap(
     Ok((bot, bot_username, workspace_root, runtime, controller))
 }
 
+fn open_sqlite_store(db_path: &str) -> anyhow::Result<SqliteBindingStore> {
+    SqliteBindingStore::open(db_path)
+        .with_context(|| format!("failed to open sqlite store at {db_path}"))
+}
+
 pub(crate) fn build_runtime_components(
     bot: &Bot,
     db_path: &str,
 ) -> anyhow::Result<(SqliteBindingStore, CodexExecRunner, BotTopicManager, RuntimeController)> {
-    let store = SqliteBindingStore::open(db_path)
-        .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
+    let store = open_sqlite_store(db_path)?;
     let runtime = CodexExecRunner::default();
     let topics = BotTopicManager { bot: bot.clone() };
-    let controller_store = SqliteBindingStore::open(db_path)
-        .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
+    let controller_store = open_sqlite_store(db_path)?;
     let controller = AppController::new(AppService::new(
         controller_store,
         runtime.clone(),
