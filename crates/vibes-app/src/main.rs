@@ -11,6 +11,7 @@ mod main_prompt_tests;
 mod main_runtime;
 mod main_startup;
 mod main_support;
+#[cfg(test)]
 mod main_test_support;
 
 use main_runtime::{CodexPromptExecutor, run_polling_loop};
