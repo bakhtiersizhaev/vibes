@@ -216,6 +216,13 @@ mod tests {
     }
 
     #[test]
+    fn converts_thread_id_at_i32_upper_bound() {
+        let thread_id = thread_id_to_teloxide(i64::from(i32::MAX))
+            .expect("i32::MAX should still be representable");
+        assert_eq!(thread_id.0.0, i32::MAX);
+    }
+
+    #[test]
     fn rejects_non_positive_thread_id() {
         let err = thread_id_to_teloxide(0).expect_err("zero should fail");
         assert!(err.to_string().contains("thread id must be positive"));
