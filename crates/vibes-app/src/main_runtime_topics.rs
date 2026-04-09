@@ -8,6 +8,12 @@ pub(crate) struct BotTopicManager {
     pub(crate) bot: Bot,
 }
 
+impl BotTopicManager {
+    pub(crate) fn new(bot: &Bot) -> Self {
+        Self { bot: bot.clone() }
+    }
+}
+
 impl TopicManager for BotTopicManager {
     fn create_topic(&self, chat_id: i64, title: &str) -> Result<i64, AppServiceError> {
         tokio::task::block_in_place(|| {
@@ -24,6 +30,3 @@ impl TopicManager for BotTopicManager {
 }
 
 
-pub(crate) fn build_topic_manager(bot: &Bot) -> BotTopicManager {
-    BotTopicManager { bot: bot.clone() }
-}

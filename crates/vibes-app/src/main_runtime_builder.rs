@@ -3,7 +3,7 @@ use vibes_app::{AppController, AppService};
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
-use crate::main_runtime_topics::{BotTopicManager, build_topic_manager};
+use crate::main_runtime_topics::BotTopicManager;
 use crate::main_runtime_store::open_sqlite_store;
 use crate::main_startup_context::build_startup_context;
 
@@ -40,7 +40,7 @@ fn build_runtime_controller(
     Ok(AppController::new(AppService::new(
         controller_store,
         runtime.clone(),
-        build_topic_manager(bot),
+        BotTopicManager::new(bot),
     )))
 }
 
@@ -50,7 +50,7 @@ pub(crate) fn build_runtime_components(
 ) -> anyhow::Result<(SqliteBindingStore, CodexExecRunner, BotTopicManager, RuntimeController)> {
     let store = open_sqlite_store(db_path)?;
     let runtime = CodexExecRunner::default();
-    let topics = build_topic_manager(bot);
+    let topics = BotTopicManager::new(bot);
     let controller = build_runtime_controller(bot, db_path, &runtime)?;
     Ok((store, runtime, topics, controller))
 }
