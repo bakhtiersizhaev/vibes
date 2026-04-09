@@ -37,7 +37,7 @@ mod main_loop_mixed_tests;
 #[cfg(test)]
 mod main_loop_direct_plain_tests;
 #[cfg(test)]
-mod main_loop_topic_plain_message_tests;
+mod main_loop_topic_plain_tests;
 #[cfg(test)]
 mod main_loop_forum_plain_tests;
 #[cfg(test)]
