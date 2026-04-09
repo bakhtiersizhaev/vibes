@@ -39,6 +39,14 @@ struct CodexPromptExecutor<'a> {
     runner: &'a CodexExecRunner,
 }
 
+fn rendered_or_default(rendered: String) -> String {
+    if rendered.trim().is_empty() {
+        "Codex run completed with no transcript output.".to_owned()
+    } else {
+        rendered
+    }
+}
+
 impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
     fn execute_prompt(
         &self,
@@ -57,12 +65,28 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
             .map_err(|err| {
                 TelegramExecutionError::new(format!("codex prompt execution failed: {err}"))
             })?;
-        let rendered = result.transcript.rendered();
-        if rendered.trim().is_empty() {
-            Ok("Codex run completed with no transcript output.".to_owned())
-        } else {
-            Ok(rendered)
-        }
+        Ok(rendered_or_default(result.transcript.rendered()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rendered_or_default;
+
+    #[test]
+    fn rendered_or_default_returns_fallback_for_blank_transcript() {
+        assert_eq!(
+            rendered_or_default("   \n\t".to_owned()),
+            "Codex run completed with no transcript output."
+        );
+    }
+
+    #[test]
+    fn rendered_or_default_keeps_non_empty_transcript() {
+        assert_eq!(
+            rendered_or_default("done transcript".to_owned()),
+            "done transcript"
+        );
     }
 }
 
