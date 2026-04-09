@@ -1,5 +1,5 @@
 use teloxide::update_listeners::AsUpdateStream;
-use teloxide::{Bot, update_listeners};
+use teloxide::update_listeners;
 use tracing::info;
 
 #[cfg(test)]
@@ -11,10 +11,7 @@ mod main_support;
 mod main_test_support;
 
 use main_runtime::{
-    BotTopicManager, CodexPromptExecutor, build_runtime_components, build_startup_context,
-    handle_listener_item, handle_next_listener_event, handle_prompt_ready, handle_runtime_outcome,
-    handle_update, run_polling_loop, run_polling_loop_with_shutdown, startup_context_from_get_me,
-    startup_context_from_parts,
+    CodexPromptExecutor, build_runtime_components, build_startup_context, run_polling_loop,
 };
 
 #[tokio::main(flavor = "multi_thread")]
