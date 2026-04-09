@@ -261,6 +261,26 @@ mod tests {
         assert!(db_path.exists());
         std::fs::remove_file(db_path).unwrap();
     }
+
+    #[test]
+    fn build_runtime_components_returns_error_for_invalid_db_path() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir()
+            .join(format!("vibes-build-runtime-missing-{unique}"))
+            .join("nested")
+            .join("vibes.sqlite3");
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let rendered = match build_runtime_components(&bot, db_path.to_str().unwrap()) {
+            Ok(_) => panic!("expected sqlite open failure"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(rendered.contains("failed to open sqlite store"));
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
