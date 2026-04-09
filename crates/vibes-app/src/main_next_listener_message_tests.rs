@@ -77,5 +77,54 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn handle_next_listener_event_returns_true_for_message_update() {
+        let db_path = unique_db_path();
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
 
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (_store, _runtime, _topics, controller) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let update: Update = serde_json::from_str(
+            r#"{
+                "update_id": 952,
+                "message": {
+                    "message_id": 702,
+                    "date": 1710000052,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "hello"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let keep_running = handle_next_listener_event(
+            &controller,
+            &bot,
+            &executor,
+            Some(Ok(update)),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        assert!(keep_running);
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
 }
+
