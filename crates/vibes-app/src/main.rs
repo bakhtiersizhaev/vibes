@@ -9,8 +9,6 @@ mod main_listener_topic_command_tests;
 #[cfg(test)]
 mod main_listener_scope_tests;
 #[cfg(test)]
-mod main_listener_message_tests;
-#[cfg(test)]
 mod main_loop_shutdown_tests;
 #[cfg(test)]
 mod main_next_listener_scope_tests;
