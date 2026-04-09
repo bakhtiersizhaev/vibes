@@ -1,339 +1,47 @@
-use std::env;
+use teloxide::update_listeners::AsUpdateStream;
+use teloxide::{Bot, update_listeners};
+use tracing::info;
 
-use anyhow::Context;
-use teloxide::{
-    prelude::{Bot, Request, Requester},
-    types::ChatId,
-    update_listeners::{self, AsUpdateStream},
-};
-use tokio::pin;
-use tokio_stream::StreamExt;
-use tracing::{error, info};
-use vibes_app::{
-    AppController, AppService, AppServiceError, RuntimeOutcome, TelegramExecutionError,
-    TelegramPromptExecutor, TelegramRequester, TopicManager, complete_runtime_outcome,
-    run_telegram_update,
-};
-use vibes_codex::CodexExecRunner;
-use vibes_store::SqliteBindingStore;
-
-struct BotTopicManager {
-    bot: Bot,
-}
-
-impl TopicManager for BotTopicManager {
-    fn create_topic(&self, chat_id: i64, title: &str) -> Result<i64, AppServiceError> {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.bot
-                    .create_forum_topic(ChatId(chat_id), title.to_owned())
-                    .send()
-                    .await
-                    .map(|topic| i64::from(topic.thread_id.0.0))
-                    .map_err(|err| AppServiceError::Topic(err.to_string()))
-            })
-        })
-    }
-}
-
-struct CodexPromptExecutor<'a> {
-    runner: &'a CodexExecRunner,
-}
-
+mod main_runtime;
 mod main_support;
-#[cfg(test)]
 mod main_test_support;
 
-use main_support::{bot_username, codex_request_and_cwd, rendered_or_default, runtime_paths};
-
-impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
-    fn execute_prompt(
-        &self,
-        binding: &vibes_core::SessionBinding,
-        prompt: &str,
-    ) -> Result<String, TelegramExecutionError> {
-        let (request, cwd) = codex_request_and_cwd(binding, prompt);
-        let result = self.runner.run(&request, &cwd).map_err(|err| {
-            TelegramExecutionError::new(format!("codex prompt execution failed: {err}"))
-        })?;
-        Ok(rendered_or_default(result.transcript.rendered()))
-    }
-}
-
-async fn handle_prompt_ready<Q, E>(
-    requester: &Q,
-    executor: &E,
-    target: vibes_telegram::ReplyTarget,
-    binding: vibes_core::SessionBinding,
-    prompt: String,
-) where
-    Q: TelegramRequester,
-    E: TelegramPromptExecutor,
-{
-    info!(
-        chat_id = target.chat_id,
-        thread_id = target.message_thread_id,
-        scope = %binding.scope.scope_key(),
-        session_id = %binding.session.codex_session_id,
-        prompt_len = prompt.len(),
-        "prompt ready for codex execution"
-    );
-
-    match complete_runtime_outcome(
-        requester,
-        executor,
-        RuntimeOutcome::PromptReady {
-            target,
-            binding,
-            prompt,
-        },
-    )
-    .await
-    {
-        Ok(RuntimeOutcome::Replied { target, .. }) => {
-            info!(
-                chat_id = target.chat_id,
-                thread_id = target.message_thread_id,
-                "codex execution reply sent"
-            );
-        }
-        Ok(other) => {
-            info!(outcome = ?other, "unexpected runtime completion outcome");
-        }
-        Err(err) => {
-            error!(error = %err, "failed to complete codex execution outcome");
-        }
-    }
-}
-
-async fn handle_runtime_outcome(
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
-    outcome: RuntimeOutcome,
-) {
-    match outcome {
-        RuntimeOutcome::Ignored => {}
-        RuntimeOutcome::Replied { target, .. } => {
-            info!(
-                chat_id = target.chat_id,
-                thread_id = target.message_thread_id,
-                "reply sent"
-            );
-        }
-        RuntimeOutcome::PromptReady {
-            target,
-            binding,
-            prompt,
-        } => {
-            handle_prompt_ready(bot, executor, target, binding, prompt).await;
-        }
-    }
-}
-
-async fn handle_update(
-    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
-    update: teloxide::types::Update,
-    bot_username: Option<&str>,
-    workspace_root: &str,
-) {
-    match run_telegram_update(controller, bot, &update, bot_username, workspace_root).await {
-        Ok(outcome) => {
-            handle_runtime_outcome(bot, executor, outcome).await;
-        }
-        Err(err) => {
-            error!(error = %err, "failed to handle telegram update");
-        }
-    }
-}
-
-async fn handle_listener_item(
-    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
-    update: Result<teloxide::types::Update, teloxide::RequestError>,
-    bot_username: Option<&str>,
-    workspace_root: &str,
-) {
-    match update {
-        Ok(update) => {
-            handle_update(
-                controller,
-                bot,
-                executor,
-                update,
-                bot_username,
-                workspace_root,
-            )
-            .await;
-        }
-        Err(err) => error!(error = ?err, "polling listener error"),
-    }
-}
-
-fn build_runtime_components(
-    bot: &Bot,
-    db_path: &str,
-) -> Result<
-    (
-        AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-        CodexExecRunner,
-    ),
-    anyhow::Error,
-> {
-    let store = SqliteBindingStore::open(db_path)
-        .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
-    let runtime = CodexExecRunner::default();
-    let topics = BotTopicManager { bot: bot.clone() };
-    let controller = AppController::new(AppService::new(store, runtime.clone(), topics));
-    Ok((controller, runtime))
-}
-
-fn startup_context_from_parts(
-    bot: Bot,
-    user: &teloxide::types::User,
-    workspace_root_override: Option<String>,
-    db_path_override: Option<String>,
-) -> (Bot, Option<String>, String, String) {
-    let bot_username = bot_username(user);
-    let (workspace_root, db_path) = runtime_paths(workspace_root_override, db_path_override);
-    (bot, bot_username, workspace_root, db_path)
-}
-
-fn startup_context_from_get_me(
-    bot: Bot,
-    me_result: Result<teloxide::types::Me, teloxide::RequestError>,
-    workspace_root_override: Option<String>,
-    db_path_override: Option<String>,
-) -> anyhow::Result<(Bot, Option<String>, String, String)> {
-    let me = me_result.context("get_me failed")?;
-    Ok(startup_context_from_parts(
-        bot,
-        &me.user,
-        workspace_root_override,
-        db_path_override,
-    ))
-}
-
-async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
-    let bot = Bot::from_env();
-    startup_context_from_get_me(
-        bot.clone(),
-        bot.get_me().send().await,
-        env::var("VIBES_WORKSPACE_ROOT").ok(),
-        env::var("VIBES_DB_PATH").ok(),
-    )
-}
-
-async fn handle_next_listener_event(
-    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
-    update: Option<Result<teloxide::types::Update, teloxide::RequestError>>,
-    bot_username: Option<&str>,
-    workspace_root: &str,
-) -> bool {
-    let Some(update) = update else {
-        info!("polling listener stream ended");
-        return false;
-    };
-
-    handle_listener_item(
-        controller,
-        bot,
-        executor,
-        update,
-        bot_username,
-        workspace_root,
-    )
-    .await;
-
-    true
-}
-
-async fn run_polling_loop_with_shutdown<S, F>(
-    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
-    stream: S,
-    shutdown: F,
-    bot_username: Option<&str>,
-    workspace_root: &str,
-) where
-    S: tokio_stream::Stream<Item = Result<teloxide::types::Update, teloxide::RequestError>>,
-    F: std::future::Future<Output = ()>,
-{
-    pin!(stream);
-    pin!(shutdown);
-
-    loop {
-        tokio::select! {
-            _ = &mut shutdown => {
-                info!("ctrl-c received, stopping polling loop");
-                break;
-            }
-            update = stream.next() => {
-                if !handle_next_listener_event(
-                    controller,
-                    bot,
-                    executor,
-                    update,
-                    bot_username,
-                    workspace_root,
-                ).await {
-                    break;
-                }
-            }
-        }
-    }
-
-    info!("vibes polling loop stopped");
-}
-
-async fn run_polling_loop<S>(
-    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-    bot: &Bot,
-    executor: &impl TelegramPromptExecutor,
-    stream: S,
-    bot_username: Option<&str>,
-    workspace_root: &str,
-) where
-    S: tokio_stream::Stream<Item = Result<teloxide::types::Update, teloxide::RequestError>>,
-{
-    run_polling_loop_with_shutdown(
-        controller,
-        bot,
-        executor,
-        stream,
-        async {
-            let _ = tokio::signal::ctrl_c().await;
-        },
-        bot_username,
-        workspace_root,
-    )
-    .await;
-}
+use main_runtime::{
+    BotTopicManager, CodexPromptExecutor, build_runtime_components, build_startup_context,
+    handle_listener_item, handle_next_listener_event, handle_prompt_ready, handle_runtime_outcome,
+    handle_update, run_polling_loop, run_polling_loop_with_shutdown, startup_context_from_get_me,
+    startup_context_from_parts,
+};
 
 #[cfg(test)]
 mod tests {
+    use super::main_test_support::{
+        NoopExecutor, PanicExecutor, RecordingExecutor, RecordingRequester, SharedWriter,
+    };
     use super::{
         build_runtime_components, handle_listener_item, handle_next_listener_event,
         handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
         run_polling_loop_with_shutdown, startup_context_from_get_me, startup_context_from_parts,
     };
-    use crate::main_test_support::{
-        NoopExecutor, PanicExecutor, RecordingExecutor, RecordingRequester, SharedWriter,
-    };
     use std::{
-        sync::Mutex,
-        time::{SystemTime, UNIX_EPOCH},
+        path::PathBuf,
+        sync::{
+            Mutex,
+            atomic::{AtomicU64, Ordering},
+        },
     };
     use teloxide::types::User;
     use teloxide::{ApiError, Bot, RequestError, types::Update};
-    use tokio_stream::StreamExt;
-    use tokio_stream::{iter, pending};
+    use tokio_stream::{StreamExt, iter, pending};
     use vibes_app::RuntimeOutcome;
+
+    static TEST_DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_db_path() -> PathBuf {
+        let pid = std::process::id();
+        let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("vibes-build-runtime-{pid}-{n}.sqlite3"))
+    }
 
     #[tokio::test]
     async fn handle_runtime_outcome_keeps_ignored_without_executor_use() {
@@ -360,17 +68,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_new_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -400,7 +104,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -563,17 +267,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_new_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -609,7 +309,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -618,17 +318,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_forum_root_new_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -666,7 +362,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -675,17 +371,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_forum_root_new_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -717,7 +409,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -726,17 +418,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_topic_new_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -768,7 +456,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -777,17 +465,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_topic_new_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -825,7 +509,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -834,17 +518,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_forum_root_resume_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -876,7 +556,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -885,17 +565,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_forum_root_resume_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -933,7 +609,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -942,17 +618,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_topic_resume_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -984,7 +656,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -993,17 +665,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_topic_resume_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1041,7 +709,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1050,17 +718,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_resume_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1090,7 +754,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1099,17 +763,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_resume_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1145,7 +805,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1154,17 +814,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_ignores_non_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1184,7 +840,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1193,17 +849,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_topic_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1230,7 +882,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1239,17 +891,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1274,7 +922,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1283,17 +931,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_topic_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1326,7 +970,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1335,17 +979,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_processes_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1370,7 +1010,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1379,17 +1019,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_logs_runtime_error() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1424,7 +1060,7 @@ mod tests {
             .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         let rendered = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
         assert!(rendered.contains("failed to handle telegram update"));
@@ -1436,17 +1072,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_update_ignores_runtime_error_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1473,7 +1105,7 @@ mod tests {
         )
         .unwrap();
 
-        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+        handle_update(&controller, &bot, &executor, &update, None, "/workspace").await;
 
         if db_path.exists() {
             std::fs::remove_file(db_path).unwrap();
@@ -1482,17 +1114,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_ignores_non_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1521,17 +1149,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_topic_new_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1578,17 +1202,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_topic_resume_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1635,17 +1255,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_topic_resume_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1686,17 +1302,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_topic_new_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1737,17 +1349,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_topic_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1783,17 +1391,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_forum_root_resume_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1839,17 +1443,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_forum_root_resume_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1889,17 +1489,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_forum_root_new_command_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1939,17 +1535,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_forum_root_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -1984,17 +1576,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_logs_request_error() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let writer = SharedWriter::default();
@@ -2026,17 +1614,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_message_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -2070,17 +1654,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_topic_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -2122,17 +1702,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_forum_root_new_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -2178,17 +1754,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_forum_root_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -2229,17 +1801,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_processes_caption_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update: Update = serde_json::from_str(
@@ -2273,17 +1841,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_listener_item_ignores_request_error_without_executor_use() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
 
@@ -2304,11 +1868,7 @@ mod tests {
 
     #[test]
     fn build_runtime_components_creates_sqlite_store_at_path() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
@@ -2322,12 +1882,7 @@ mod tests {
 
     #[test]
     fn build_runtime_components_reopens_existing_sqlite_store() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path =
-            std::env::temp_dir().join(format!("vibes-build-runtime-reopen-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
@@ -2389,8 +1944,8 @@ mod tests {
         assert_eq!(db_path, "/tmp/custom.sqlite3");
     }
 
-    #[test]
-    fn startup_context_from_get_me_preserves_username_and_runtime_paths() {
+    #[tokio::test]
+    async fn startup_context_from_get_me_preserves_username_and_runtime_paths() {
         let bot = Bot::new("123456:TESTTOKEN");
         let me: teloxide::types::Me = serde_json::from_str(
             r#"{
@@ -2413,6 +1968,7 @@ mod tests {
             Some("/workspace".to_owned()),
             Some("/tmp/vibes.sqlite3".to_owned()),
         )
+        .await
         .unwrap();
 
         assert_eq!(bot_username.as_deref(), Some("vibes_bot"));
@@ -2420,8 +1976,8 @@ mod tests {
         assert_eq!(db_path, "/tmp/vibes.sqlite3");
     }
 
-    #[test]
-    fn startup_context_from_get_me_wraps_error_with_context() {
+    #[tokio::test]
+    async fn startup_context_from_get_me_wraps_error_with_context() {
         let bot = Bot::new("123456:TESTTOKEN");
         let error = startup_context_from_get_me(
             bot,
@@ -2429,6 +1985,7 @@ mod tests {
             None,
             None,
         )
+        .await
         .unwrap_err();
 
         let rendered = format!("{error:#}");
@@ -2462,12 +2019,8 @@ mod tests {
 
     #[test]
     fn build_runtime_components_returns_error_for_invalid_db_path() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir()
-            .join(format!("vibes-build-runtime-missing-{unique}"))
+        let db_path = unique_db_path()
+            .with_extension("")
             .join("nested")
             .join("vibes.sqlite3");
 
@@ -2484,17 +2037,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_processes_event_before_shutdown_signal() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let update = serde_json::from_str::<Update>(
@@ -2547,17 +2096,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_logs_shutdown_and_stop() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let writer = SharedWriter::default();
@@ -2591,17 +2136,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_returns_when_shutdown_resolves_immediately() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let stream = tokio_stream::iter(vec![Ok(serde_json::from_str::<Update>(
@@ -2644,17 +2185,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_logs_stream_end_and_stop() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = PanicExecutor;
         let writer = SharedWriter::default();
@@ -2687,17 +2224,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_returns_on_stream_end_without_events() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let stream = tokio_stream::iter(vec![]);
@@ -2711,17 +2244,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_returns_true_for_non_message_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -2760,17 +2289,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_returns_true_for_request_error() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let keep_running = handle_next_listener_event(
@@ -2792,17 +2317,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_returns_true_for_caption_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -2852,17 +2373,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_returns_true_for_message_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -2906,17 +2423,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_returns_false_for_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
 
@@ -2932,17 +2445,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_non_message_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -2980,17 +2489,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_request_error() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let request_error = RequestError::Api(ApiError::Unknown("bad request".to_owned()));
@@ -3013,17 +2518,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_message_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3066,17 +2567,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_caption_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3119,17 +2616,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_topic_message_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3174,17 +2667,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_topic_caption_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3229,17 +2718,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_message_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3283,17 +2768,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_caption_update() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3337,17 +2818,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_new_command() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3394,17 +2871,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_direct_new_command() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3450,17 +2923,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_direct_new_caption() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3506,17 +2975,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_new_caption() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3563,17 +3028,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_direct_resume_command() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3619,17 +3080,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_direct_resume_caption() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3675,17 +3132,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_resume_command() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3732,17 +3185,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_forum_root_resume_caption() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3789,17 +3238,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_topic_new_command() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3847,17 +3292,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_topic_new_caption() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3905,17 +3346,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_topic_resume_command() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -3963,17 +3400,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_next_listener_event_keeps_running_for_topic_resume_caption() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4021,17 +3454,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_returns_immediately_on_empty_stream() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let stream = iter(Vec::<Result<Update, RequestError>>::new());
@@ -4045,17 +3474,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_processes_event_and_returns_on_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4090,17 +3515,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_processes_multiple_events_before_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update1: Update = serde_json::from_str(
@@ -4172,17 +3593,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_request_error_then_message_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4220,17 +3637,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_message_then_request_error_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4268,17 +3681,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_request_error_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let request_error = RequestError::Api(ApiError::Unknown("bad request".to_owned()));
@@ -4293,17 +3702,13 @@ mod tests {
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_request_error_then_non_message_until_stream_end()
      {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4336,17 +3741,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_message_then_non_message_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let message: Update = serde_json::from_str(
@@ -4398,17 +3799,13 @@ mod tests {
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_non_message_then_request_error_until_stream_end()
      {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let callback: Update = serde_json::from_str(
@@ -4441,17 +3838,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_non_message_then_message_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let non_message: Update = serde_json::from_str(
@@ -4502,17 +3895,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_non_message_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4542,17 +3931,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_caption_update_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4587,17 +3972,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_message_update_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4632,17 +4013,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_topic_message_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4679,17 +4056,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_topic_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4726,17 +4099,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_forum_root_message_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4772,17 +4141,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_forum_root_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4818,17 +4183,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_direct_new_command_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4868,17 +4229,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_direct_new_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4918,17 +4275,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_forum_root_new_command_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -4969,17 +4322,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_forum_root_new_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5020,17 +4369,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_direct_resume_command_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5070,17 +4415,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_direct_resume_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5120,17 +4461,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_forum_root_resume_command_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5171,17 +4508,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_forum_root_resume_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5222,17 +4555,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_topic_new_command_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5274,17 +4603,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_topic_new_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5326,17 +4651,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_topic_resume_command_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5378,17 +4699,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_polling_loop_keeps_running_through_topic_resume_caption_until_stream_end() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        let db_path = unique_db_path();
         if db_path.exists() {
             std::fs::remove_file(&db_path).unwrap();
         }
 
         let bot = Bot::new("123456:TESTTOKEN");
-        let (controller, _runtime) =
+        let (_store, _runtime, _topics, controller) =
             build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
         let executor = NoopExecutor;
         let update: Update = serde_json::from_str(
@@ -5442,7 +4759,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (bot, bot_username, workspace_root, db_path) = build_startup_context().await?;
 
-    let (controller, runtime) = build_runtime_components(&bot, &db_path)?;
+    let (_store, runtime, _topics, controller) = build_runtime_components(&bot, &db_path)?;
     let executor = CodexPromptExecutor { runner: &runtime };
 
     let mut listener = update_listeners::polling_default(bot.clone()).await;
