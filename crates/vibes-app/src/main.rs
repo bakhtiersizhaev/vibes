@@ -220,6 +220,31 @@ async fn run_polling_loop<S>(
     info!("vibes polling loop stopped");
 }
 
+#[cfg(test)]
+mod tests {
+    use super::build_runtime_components;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use teloxide::Bot;
+
+    #[test]
+    fn build_runtime_components_creates_sqlite_store_at_path() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let _ = build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+
+        assert!(db_path.exists());
+        std::fs::remove_file(db_path).unwrap();
+    }
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
