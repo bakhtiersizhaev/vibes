@@ -296,6 +296,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_runtime_outcome_keeps_ignored_without_executor_use() {
+        let bot = Bot::new("123456:TESTTOKEN");
+        let executor = PanicExecutor;
+
+        handle_runtime_outcome(&bot, &executor, RuntimeOutcome::Ignored).await;
+    }
+
+    #[tokio::test]
     async fn handle_runtime_outcome_keeps_replied_without_executor_use() {
         let bot = Bot::new("123456:TESTTOKEN");
         let executor = PanicExecutor;
