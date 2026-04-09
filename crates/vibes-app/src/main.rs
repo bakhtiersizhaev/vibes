@@ -49,6 +49,8 @@ mod main_loop_direct_resume_command_tests;
 #[cfg(test)]
 mod main_loop_topic_command_tests;
 #[cfg(test)]
+mod main_loop_topic_resume_command_tests;
+#[cfg(test)]
 mod main_prompt_tests;
 mod main_runtime;
 mod main_startup;
