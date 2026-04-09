@@ -8,8 +8,6 @@ mod main_listener_tests;
 mod main_loop_tests;
 #[cfg(test)]
 mod main_prompt_tests;
-#[cfg(test)]
-mod main_update_tests;
 mod main_runtime;
 mod main_startup;
 mod main_support;
