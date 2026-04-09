@@ -4,7 +4,6 @@ use anyhow::Context;
 use teloxide::{
     prelude::{Bot, Request, Requester},
     types::ChatId,
-    update_listeners::{self, AsUpdateStream},
 };
 use tokio::pin;
 use tokio_stream::StreamExt;

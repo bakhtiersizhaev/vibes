@@ -1,24 +1,16 @@
 use std::{
     path::PathBuf,
-    sync::{
-        Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
 
-use teloxide::types::User;
 use teloxide::{ApiError, Bot, RequestError, types::Update};
 use tokio_stream::{StreamExt, iter, pending};
-use vibes_app::RuntimeOutcome;
 
 use crate::main_runtime::{
-    build_runtime_components, handle_listener_item, handle_next_listener_event,
-    handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
-    run_polling_loop_with_shutdown, startup_context_from_get_me, startup_context_from_parts,
+    build_runtime_components, handle_next_listener_event, run_polling_loop,
+    run_polling_loop_with_shutdown,
 };
-use crate::main_test_support::{
-    NoopExecutor, PanicExecutor, RecordingExecutor, RecordingRequester, SharedWriter,
-};
+use crate::main_test_support::{NoopExecutor, PanicExecutor, SharedWriter};
 
 #[cfg(test)]
 mod tests {
