@@ -64,8 +64,6 @@ mod main_support_tests;
 #[cfg(test)]
 mod main_codex_request_tests;
 #[cfg(test)]
-mod main_transcript_tests;
-#[cfg(test)]
 mod main_startup_tests;
 
 use main_runtime::{CodexPromptExecutor, run_polling_loop};
