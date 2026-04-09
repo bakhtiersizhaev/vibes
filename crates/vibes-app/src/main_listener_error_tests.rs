@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use teloxide::{ApiError, Bot, RequestError, types::Update};
+use teloxide::{ApiError, Bot, RequestError};
 
 use crate::main_runtime::handle_listener_item;
 use crate::main_startup::build_runtime_components;
