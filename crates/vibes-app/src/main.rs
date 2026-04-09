@@ -35,7 +35,7 @@ mod main_loop_request_error_tests;
 #[cfg(test)]
 mod main_loop_mixed_tests;
 #[cfg(test)]
-mod main_loop_direct_plain_tests;
+mod main_loop_direct_tests;
 #[cfg(test)]
 mod main_loop_topic_tests;
 #[cfg(test)]
