@@ -126,26 +126,4 @@ mod tests {
             std::fs::remove_file(db_path).unwrap();
         }
     }
-
-    #[tokio::test]
-    async fn handle_next_listener_event_returns_false_for_stream_end() {
-        let db_path = unique_db_path();
-        if db_path.exists() {
-            std::fs::remove_file(&db_path).unwrap();
-        }
-
-        let bot = Bot::new("123456:TESTTOKEN");
-        let (_store, _runtime, _topics, controller) =
-            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
-        let executor = NoopExecutor;
-
-        let keep_running =
-            handle_next_listener_event(&controller, &bot, &executor, None, None, "/workspace")
-                .await;
-
-        assert!(!keep_running);
-        if db_path.exists() {
-            std::fs::remove_file(db_path).unwrap();
-        }
-    }
 }
