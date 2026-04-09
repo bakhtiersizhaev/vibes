@@ -4834,6 +4834,27 @@ fn falls_back_to_chat_reply_for_resume_reply_when_thread_send_fails() {
 }
 
 #[test]
+fn complete_runtime_outcome_keeps_ignored_without_sending() {
+    let requester = FakeRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("unused".to_owned())),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, RuntimeOutcome::Ignored))
+            .expect("completion ok");
+
+    assert_eq!(completed, RuntimeOutcome::Ignored);
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn complete_runtime_outcome_does_not_resend_existing_reply() {
     let requester = FakeRequester::default();
     let executor = FakeExecutor {
