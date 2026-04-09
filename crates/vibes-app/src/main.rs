@@ -188,15 +188,26 @@ fn build_runtime_components(
     Ok((controller, runtime))
 }
 
+fn startup_context_from_parts(
+    bot: Bot,
+    user: &teloxide::types::User,
+    workspace_root_override: Option<String>,
+    db_path_override: Option<String>,
+) -> (Bot, Option<String>, String, String) {
+    let bot_username = bot_username(user);
+    let (workspace_root, db_path) = runtime_paths(workspace_root_override, db_path_override);
+    (bot, bot_username, workspace_root, db_path)
+}
+
 async fn build_startup_context() -> anyhow::Result<(Bot, Option<String>, String, String)> {
     let bot = Bot::from_env();
     let me = bot.get_me().send().await.context("get_me failed")?;
-    let bot_username = bot_username(&me.user);
-    let (workspace_root, db_path) = runtime_paths(
+    Ok(startup_context_from_parts(
+        bot,
+        &me.user,
         env::var("VIBES_WORKSPACE_ROOT").ok(),
         env::var("VIBES_DB_PATH").ok(),
-    );
-    Ok((bot, bot_username, workspace_root, db_path))
+    ))
 }
 
 async fn handle_next_listener_event(
@@ -269,6 +280,7 @@ mod tests {
     use super::{
         build_runtime_components, handle_listener_item, handle_next_listener_event,
         handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
+        startup_context_from_parts,
     };
     use std::{
         sync::Mutex,
@@ -1217,6 +1229,31 @@ mod tests {
 
         assert!(db_path.exists());
         std::fs::remove_file(db_path).unwrap();
+    }
+
+    #[test]
+    fn startup_context_from_parts_preserves_bot_username_and_runtime_paths() {
+        let bot = Bot::new("123456:TESTTOKEN");
+        let user: teloxide::types::User = serde_json::from_str(
+            r#"{
+                "id": 408258968,
+                "is_bot": true,
+                "first_name": "VibesBot",
+                "username": "vibes_bot"
+            }"#,
+        )
+        .unwrap();
+
+        let (_bot, bot_username, workspace_root, db_path) = startup_context_from_parts(
+            bot,
+            &user,
+            Some("/workspace".to_owned()),
+            Some("/tmp/vibes.sqlite3".to_owned()),
+        );
+
+        assert_eq!(bot_username.as_deref(), Some("vibes_bot"));
+        assert_eq!(workspace_root, "/workspace");
+        assert_eq!(db_path, "/tmp/vibes.sqlite3");
     }
 
     #[test]
