@@ -2618,6 +2618,88 @@ fn trimmed_caption_prompt_result_propagates_request_send_failure_in_direct_chat(
 }
 
 #[test]
+fn returns_topic_prompt_ready_from_trimmed_caption_without_text() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Topic {
+            chat_id: -1001293752024,
+            topic_id: 900,
+        },
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"
+        {
+          "message": {
+            "chat": {
+              "id": -1001293752024,
+              "title": "CryptoInside Chat",
+              "type": "supergroup",
+              "username": "cryptoinside_talk",
+              "is_forum": true
+            },
+            "date": 1721592580,
+            "from": {
+              "first_name": "the Cable Guy",
+              "id": 5964236329,
+              "is_bot": false,
+              "language_code": "en",
+              "username": "tg"
+            },
+            "message_id": 3126,
+            "message_thread_id": 900,
+            "caption": "   continue parser from topic caption   ",
+            "photo": [
+              {
+                "file_id": "id",
+                "file_unique_id": "uq",
+                "width": 1,
+                "height": 1
+              }
+            ]
+          },
+          "update_id": 306197401
+        }
+        "#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::PromptReady {
+        target,
+        binding,
+        prompt,
+    } = outcome
+    else {
+        panic!("expected prompt-ready outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert_eq!(binding.session.codex_session_id, "sess-1");
+    assert_eq!(prompt, "continue parser from topic caption");
+    assert!(
+        requester
+            .sent
+            .lock()
+            .expect("fake requester lock poisoned")
+            .is_empty()
+    );
+}
+
+#[test]
 fn returns_topic_prompt_ready_from_caption_without_text() {
     let store = InMemoryBindingStore::default();
     store.upsert_binding(vibes_core::SessionBinding {
