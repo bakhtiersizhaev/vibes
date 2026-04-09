@@ -68,7 +68,9 @@ fn runtime_paths(workspace_root: Option<String>, db_path: Option<String>) -> (St
 }
 
 fn bot_username(user: &teloxide::types::User) -> Option<String> {
-    user.username.clone()
+    user.username
+        .clone()
+        .filter(|username| !username.is_empty())
 }
 
 impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
@@ -419,12 +421,12 @@ mod tests {
     }
 
     #[test]
-    fn bot_username_preserves_empty_string_when_present() {
+    fn bot_username_returns_none_for_empty_string() {
         let user: teloxide::types::User =
             serde_json::from_str(r#"{"id":1,"is_bot":true,"first_name":"Vibes","username":""}"#)
                 .unwrap();
 
-        assert_eq!(bot_username(&user).as_deref(), Some(""));
+        assert_eq!(bot_username(&user), None);
     }
 }
 
