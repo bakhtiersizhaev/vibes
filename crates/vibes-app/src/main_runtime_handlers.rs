@@ -1,15 +1,10 @@
 use teloxide::prelude::Bot;
 use tracing::{error, info};
-use vibes_app::{AppController, TelegramPromptExecutor, run_telegram_update};
+use vibes_app::{TelegramPromptExecutor, run_telegram_update};
 
 use crate::main_runtime::BotTopicManager;
+use crate::main_runtime_components::RuntimeController;
 use crate::main_runtime_outcome::handle_runtime_outcome;
-
-type RuntimeController = AppController<
-    vibes_store::SqliteBindingStore,
-    vibes_codex::CodexExecRunner,
-    BotTopicManager,
->;
 
 pub(crate) async fn handle_update<E>(
     controller: &RuntimeController,

@@ -12,6 +12,9 @@ use vibes_store::SqliteBindingStore;
 
 use crate::main_support::{codex_request_and_cwd, rendered_or_default};
 
+pub(crate) type RuntimeController =
+    AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>;
+
 pub(crate) struct BotTopicManager {
     pub(crate) bot: Bot,
 }
@@ -52,12 +55,7 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
 pub(crate) fn build_runtime_components(
     bot: &Bot,
     db_path: &str,
-) -> anyhow::Result<(
-    SqliteBindingStore,
-    CodexExecRunner,
-    BotTopicManager,
-    AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
-)> {
+) -> anyhow::Result<(SqliteBindingStore, CodexExecRunner, BotTopicManager, RuntimeController)> {
     let store = SqliteBindingStore::open(db_path)
         .with_context(|| format!("failed to open sqlite store at {db_path}"))?;
     let runtime = CodexExecRunner::default();
