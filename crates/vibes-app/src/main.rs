@@ -1456,6 +1456,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_polling_loop_returns_immediately_on_empty_stream() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let stream = iter(Vec::<Result<Update, RequestError>>::new());
+
+        run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
     async fn run_polling_loop_processes_event_and_returns_on_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
