@@ -9,6 +9,8 @@ mod main_listener_core_tests;
 #[cfg(test)]
 mod main_loop_tests;
 #[cfg(test)]
+mod main_loop_event_tests;
+#[cfg(test)]
 mod main_loop_command_tests;
 #[cfg(test)]
 mod main_prompt_tests;
