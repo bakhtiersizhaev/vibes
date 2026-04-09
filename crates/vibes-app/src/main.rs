@@ -326,6 +326,7 @@ mod tests {
     };
     use teloxide::types::User;
     use teloxide::{ApiError, Bot, RequestError, types::Update};
+    use tokio_stream::StreamExt;
     use tokio_stream::iter;
     use vibes_app::{
         RuntimeOutcome, TelegramExecutionError, TelegramPromptExecutor, TelegramRequestError,
@@ -2403,6 +2404,69 @@ mod tests {
 
         assert!(rendered.contains("failed to open sqlite store"));
         assert!(rendered.contains(&path_string));
+    }
+
+    #[tokio::test]
+    async fn run_polling_loop_processes_event_before_shutdown_signal() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let update = serde_json::from_str::<Update>(
+            r#"{
+                "update_id": 778,
+                "message": {
+                    "message_id": 701,
+                    "date": 1710000778,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "hello before shutdown"
+                }
+            }"#,
+        )
+        .unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        let mut tx = Some(tx);
+        let stream = iter(vec![Ok(update)]).map(move |item| {
+            if let Some(tx) = tx.take() {
+                let _ = tx.send(());
+            }
+            item
+        });
+
+        run_polling_loop_with_shutdown(
+            &controller,
+            &bot,
+            &executor,
+            stream,
+            async move {
+                let _ = rx.await;
+            },
+            None,
+            "/workspace",
+        )
+        .await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
     }
 
     #[tokio::test]
