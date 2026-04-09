@@ -19,7 +19,7 @@ mod tests {
     fn unique_db_path() -> PathBuf {
         let pid = std::process::id();
         let n = TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("vibes-loop-message-tests-{pid}-{n}.sqlite3"))
+        std::env::temp_dir().join(format!("vibes-loop-direct-message-tests-{pid}-{n}.sqlite3"))
     }
 
     #[tokio::test]
