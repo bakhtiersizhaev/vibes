@@ -70,6 +70,7 @@ mod main_prompt_success_tests;
 #[cfg(test)]
 mod main_prompt_tests;
 mod main_runtime_builder;
+mod main_runtime_bootstrap;
 mod main_runtime_entry;
 mod main_runtime_executor;
 mod main_tracing;
