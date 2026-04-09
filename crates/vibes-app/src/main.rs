@@ -13,7 +13,7 @@ use vibes_app::{
     AppController, AppService, AppServiceError, RuntimeOutcome, TelegramExecutionError,
     TelegramPromptExecutor, TopicManager, complete_runtime_outcome, run_telegram_update,
 };
-use vibes_codex::{CodexExecRunner, CodexRunRequest};
+use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
 struct BotTopicManager {
