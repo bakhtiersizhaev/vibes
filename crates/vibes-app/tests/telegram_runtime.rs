@@ -1129,6 +1129,58 @@ fn falls_back_to_chat_reply_for_new_session_reply_inside_existing_topic() {
 }
 
 #[test]
+fn returns_request_error_when_new_session_reply_thread_fallback_also_fails_inside_existing_topic_text()
+ {
+    let controller = controller();
+    let requester = ThreadThenChatFailRequester::default();
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": -1001293752024,
+                    "title": "CryptoInside Chat",
+                    "type": "supergroup",
+                    "username": "cryptoinside_talk",
+                    "is_forum": true
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 4,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "the Cable Guy",
+                    "id": 5964236329,
+                    "is_bot": false,
+                    "language_code":"en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134546,
+                "message_thread_id": 900,
+                "text": "/new rust-rewrite"
+            },
+            "update_id": 439432600
+        }"#,
+    );
+
+    let err = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect_err("thread then chat fallback should fail");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: chat send boom")
+    );
+}
+
+#[test]
 fn returns_prompt_ready_without_sending_message() {
     let store = InMemoryBindingStore::default();
     store.upsert_binding(vibes_core::SessionBinding {
