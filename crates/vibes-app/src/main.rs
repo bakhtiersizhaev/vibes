@@ -359,6 +359,14 @@ mod tests {
         assert_eq!(workspace_root, "");
         assert_eq!(db_path, "");
     }
+
+    #[test]
+    fn runtime_paths_preserve_empty_workspace_override_with_default_db() {
+        let (workspace_root, db_path) = runtime_paths(Some(String::new()), None);
+
+        assert_eq!(workspace_root, "");
+        assert_eq!(db_path, "vibes.sqlite3");
+    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
