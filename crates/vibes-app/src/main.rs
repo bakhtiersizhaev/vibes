@@ -9,7 +9,7 @@ mod main_listener_forum_resume_command_tests;
 #[cfg(test)]
 mod main_listener_topic_new_tests;
 #[cfg(test)]
-mod main_listener_topic_resume_command_tests;
+mod main_listener_topic_resume_tests;
 #[cfg(test)]
 mod main_listener_scope_tests;
 #[cfg(test)]
