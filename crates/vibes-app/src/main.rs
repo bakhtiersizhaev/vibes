@@ -639,6 +639,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_update_processes_forum_root_resume_command_without_executor_use() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let update: Update = serde_json::from_str(
+            r#"{
+                "update_id": 999,
+                "message": {
+                    "message_id": 777,
+                    "message_thread_id": null,
+                    "date": 1710001111,
+                    "chat": {
+                        "id": -1001293752024,
+                        "type": "supergroup",
+                        "title": "Vibes",
+                        "is_forum": true
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "/resume rust-rewrite",
+                    "entities": [{
+                        "type": "bot_command",
+                        "offset": 0,
+                        "length": 7
+                    }]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        handle_update(&controller, &bot, &executor, update, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn handle_update_processes_resume_command_without_executor_use() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
