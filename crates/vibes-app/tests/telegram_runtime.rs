@@ -934,6 +934,39 @@ fn topic_caption_prompt_result_falls_back_to_chat_reply_when_thread_send_fails()
 }
 
 #[test]
+fn topic_caption_prompt_result_returns_request_error_when_thread_fallback_also_fails() {
+    let requester = ThreadThenChatFailRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("caption topic transcript".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: -1001293752024,
+            message_thread_id: Some(900),
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Topic {
+                chat_id: -1001293752024,
+                topic_id: 900,
+            },
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser from topic caption".to_owned(),
+    };
+
+    let err = run_ready(complete_runtime_outcome(&requester, &executor, outcome))
+        .expect_err("thread then chat fallback should fail");
+    assert!(
+        err.to_string()
+            .contains("telegram request failed: chat send boom")
+    );
+}
+
+#[test]
 fn topic_caption_prompt_result_propagates_request_send_failure() {
     let store = InMemoryBindingStore::default();
     store.upsert_binding(vibes_core::SessionBinding {
