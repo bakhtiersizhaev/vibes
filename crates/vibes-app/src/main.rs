@@ -1501,6 +1501,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_polling_loop_processes_multiple_events_before_stream_end() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = NoopExecutor;
+        let update1: Update = serde_json::from_str(
+            r#"{
+                "update_id": 100,
+                "message": {
+                    "message_id": 200,
+                    "date": 1710000000,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "hello"
+                }
+            }"#,
+        )
+        .unwrap();
+        let update2: Update = serde_json::from_str(
+            r#"{
+                "update_id": 101,
+                "callback_query": {
+                    "id": "cb-1",
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "chat_instance": "ci-1",
+                    "data": "noop"
+                }
+            }"#,
+        )
+        .unwrap();
+        let update3: Update = serde_json::from_str(
+            r#"{
+                "update_id": 102,
+                "message": {
+                    "message_id": 201,
+                    "date": 1710000001,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "caption": "hi caption"
+                }
+            }"#,
+        )
+        .unwrap();
+        let stream = iter(vec![Ok(update1), Ok(update2), Ok(update3)]);
+
+        run_polling_loop(&controller, &bot, &executor, stream, None, "/workspace").await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn run_polling_loop_keeps_running_through_request_error_until_stream_end() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
