@@ -250,19 +250,19 @@ async fn handle_next_listener_event(
     true
 }
 
-async fn run_polling_loop<S>(
+async fn run_polling_loop_with_shutdown<S, F>(
     controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
     bot: &Bot,
     executor: &impl TelegramPromptExecutor,
     stream: S,
+    shutdown: F,
     bot_username: Option<&str>,
     workspace_root: &str,
 ) where
     S: tokio_stream::Stream<Item = Result<teloxide::types::Update, teloxide::RequestError>>,
+    F: std::future::Future<Output = ()>,
 {
     pin!(stream);
-
-    let shutdown = tokio::signal::ctrl_c();
     pin!(shutdown);
 
     loop {
@@ -289,12 +289,36 @@ async fn run_polling_loop<S>(
     info!("vibes polling loop stopped");
 }
 
+async fn run_polling_loop<S>(
+    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    stream: S,
+    bot_username: Option<&str>,
+    workspace_root: &str,
+) where
+    S: tokio_stream::Stream<Item = Result<teloxide::types::Update, teloxide::RequestError>>,
+{
+    run_polling_loop_with_shutdown(
+        controller,
+        bot,
+        executor,
+        stream,
+        async {
+            let _ = tokio::signal::ctrl_c().await;
+        },
+        bot_username,
+        workspace_root,
+    )
+    .await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         build_runtime_components, handle_listener_item, handle_next_listener_event,
         handle_prompt_ready, handle_runtime_outcome, handle_update, run_polling_loop,
-        startup_context_from_get_me, startup_context_from_parts,
+        run_polling_loop_with_shutdown, startup_context_from_get_me, startup_context_from_parts,
     };
     use std::{
         sync::Mutex,
@@ -2379,6 +2403,59 @@ mod tests {
 
         assert!(rendered.contains("failed to open sqlite store"));
         assert!(rendered.contains(&path_string));
+    }
+
+    #[tokio::test]
+    async fn run_polling_loop_returns_when_shutdown_resolves_immediately() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!("vibes-build-runtime-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let (controller, _runtime) =
+            build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let executor = PanicExecutor;
+        let stream = tokio_stream::iter(vec![Ok(serde_json::from_str::<Update>(
+            r#"{
+                "update_id": 777,
+                "message": {
+                    "message_id": 700,
+                    "date": 1710000777,
+                    "chat": {
+                        "id": 408258968,
+                        "type": "private",
+                        "first_name": "Bakhtier"
+                    },
+                    "from": {
+                        "id": 408258968,
+                        "is_bot": false,
+                        "first_name": "Bakhtier"
+                    },
+                    "text": "should not be consumed"
+                }
+            }"#,
+        )
+        .unwrap())]);
+
+        run_polling_loop_with_shutdown(
+            &controller,
+            &bot,
+            &executor,
+            stream,
+            std::future::ready(()),
+            None,
+            "/workspace",
+        )
+        .await;
+
+        if db_path.exists() {
+            std::fs::remove_file(db_path).unwrap();
+        }
     }
 
     #[tokio::test]
