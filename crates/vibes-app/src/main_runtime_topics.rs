@@ -22,3 +22,8 @@ impl TopicManager for BotTopicManager {
         })
     }
 }
+
+
+pub(crate) fn build_topic_manager(bot: &Bot) -> BotTopicManager {
+    BotTopicManager { bot: bot.clone() }
+}
