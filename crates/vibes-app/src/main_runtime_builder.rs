@@ -1,15 +1,11 @@
 use teloxide::prelude::Bot;
-use vibes_app::{AppController, AppService};
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
+use crate::main_runtime_controller::{RuntimeController, build_runtime_controller};
 use crate::main_runtime_topics::BotTopicManager;
 use crate::main_runtime_store::open_sqlite_store;
 use crate::main_startup_context::build_startup_context;
-
-pub(crate) type RuntimeController =
-    AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>;
-
 
 pub(crate) struct RuntimeBootstrap {
     pub(crate) bot: Bot,
@@ -29,19 +25,6 @@ pub(crate) async fn build_runtime_bootstrap() -> anyhow::Result<RuntimeBootstrap
         runtime,
         controller,
     })
-}
-
-fn build_runtime_controller(
-    bot: &Bot,
-    db_path: &str,
-    runtime: &CodexExecRunner,
-) -> anyhow::Result<RuntimeController> {
-    let controller_store = open_sqlite_store(db_path)?;
-    Ok(AppController::new(AppService::new(
-        controller_store,
-        runtime.clone(),
-        BotTopicManager::new(bot),
-    )))
 }
 
 pub(crate) fn build_runtime_components(

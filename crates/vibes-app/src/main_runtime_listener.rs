@@ -2,7 +2,7 @@ use teloxide::prelude::Bot;
 use tracing::{error, info};
 use vibes_app::TelegramPromptExecutor;
 
-use crate::main_runtime_builder::RuntimeController;
+use crate::main_runtime_controller::RuntimeController;
 use crate::main_runtime_update::handle_update;
 
 pub(crate) async fn handle_listener_item<E>(
