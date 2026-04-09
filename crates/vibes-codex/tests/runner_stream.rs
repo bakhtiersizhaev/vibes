@@ -45,11 +45,9 @@ fn streams_events_before_process_exit() {
 python3 -u - <<'PY'
 import time
 print('{"type":"thread.started","thread":{"id":"sess-9"}}', flush=True)
-time.sleep(0.2)
 print('plain-noise', flush=True)
-time.sleep(0.2)
+time.sleep(1.0)
 print('{"type":"assistant_message","text":"done"}', flush=True)
-time.sleep(0.2)
 print('{"type":"turn.completed","success":true}', flush=True)
 PY
 "#,
