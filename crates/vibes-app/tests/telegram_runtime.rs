@@ -1924,6 +1924,50 @@ fn topic_prompt_update_executes_and_replies_back_into_same_thread() {
 }
 
 #[test]
+fn topic_prompt_result_falls_back_to_chat_reply_when_thread_send_fails() {
+    let requester = ThreadFailRequester::default();
+    let executor = FakeExecutor {
+        response: Mutex::new(Ok("topic transcript after fallback".to_owned())),
+    };
+    let outcome = RuntimeOutcome::PromptReady {
+        target: ReplyTarget {
+            chat_id: -1001293752024,
+            message_thread_id: Some(900),
+        },
+        binding: vibes_core::SessionBinding {
+            scope: vibes_core::ChatScope::Topic {
+                chat_id: -1001293752024,
+                topic_id: 900,
+            },
+            session: SessionHandle {
+                codex_session_id: "sess-1".to_owned(),
+                display_name: "rust-rewrite".to_owned(),
+            },
+            workspace_root: "/workspace".to_owned(),
+        },
+        prompt: "continue parser work".to_owned(),
+    };
+
+    let completed =
+        run_ready(complete_runtime_outcome(&requester, &executor, outcome)).expect("fallback send");
+
+    let RuntimeOutcome::Replied { target, text } = completed else {
+        panic!("expected replied outcome");
+    };
+    assert_eq!(target.chat_id, -1001293752024);
+    assert_eq!(target.message_thread_id, Some(900));
+    assert_eq!(text, "topic transcript after fallback");
+    let sent = requester
+        .sent
+        .lock()
+        .expect("thread fail requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, -1001293752024);
+    assert_eq!(sent[0].1, None);
+    assert_eq!(sent[0].2, "topic transcript after fallback");
+}
+
+#[test]
 fn topic_prompt_result_propagates_request_send_failure() {
     let requester = FakeRequester {
         sent: Mutex::new(Vec::new()),
