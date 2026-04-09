@@ -210,6 +210,12 @@ mod tests {
     use super::thread_id_to_teloxide;
 
     #[test]
+    fn converts_thread_id_at_lower_positive_bound() {
+        let thread_id = thread_id_to_teloxide(1).expect("conversion should succeed");
+        assert_eq!(thread_id.0.0, 1);
+    }
+
+    #[test]
     fn converts_thread_id_in_i32_range() {
         let thread_id = thread_id_to_teloxide(900).expect("conversion should succeed");
         assert_eq!(thread_id.0.0, 900);
