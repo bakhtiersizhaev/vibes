@@ -124,6 +124,30 @@ async fn handle_runtime_outcome(
     }
 }
 
+async fn handle_listener_item(
+    controller: &AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>,
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    update: Result<teloxide::types::Update, teloxide::RequestError>,
+    bot_username: Option<&str>,
+    workspace_root: &str,
+) {
+    match update {
+        Ok(update) => {
+            match run_telegram_update(controller, bot, &update, bot_username, workspace_root).await
+            {
+                Ok(outcome) => {
+                    handle_runtime_outcome(bot, executor, outcome).await;
+                }
+                Err(err) => {
+                    error!(error = %err, "failed to handle telegram update");
+                }
+            }
+        }
+        Err(err) => error!(error = ?err, "polling listener error"),
+    }
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -171,25 +195,15 @@ async fn main() -> anyhow::Result<()> {
                     break;
                 };
 
-                match update {
-                    Ok(update) => match run_telegram_update(
-                        &controller,
-                        &bot,
-                        &update,
-                        bot_username.as_deref(),
-                        &workspace_root,
-                    )
-                    .await
-                    {
-                        Ok(outcome) => {
-                            handle_runtime_outcome(&bot, &executor, outcome).await;
-                        }
-                        Err(err) => {
-                            error!(error = %err, "failed to handle telegram update");
-                        }
-                    },
-                    Err(err) => error!(error = ?err, "polling listener error"),
-                }
+                handle_listener_item(
+                    &controller,
+                    &bot,
+                    &executor,
+                    update,
+                    bot_username.as_deref(),
+                    &workspace_root,
+                )
+                .await;
             }
         }
     }
