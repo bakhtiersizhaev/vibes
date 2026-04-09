@@ -1240,6 +1240,72 @@ fn topic_caption_prompt_execution_failure_falls_back_to_chat_reply() {
 }
 
 #[test]
+fn sends_resume_reply_in_direct_chat() {
+    let store = InMemoryBindingStore::default();
+    store.upsert_binding(vibes_core::SessionBinding {
+        scope: vibes_core::ChatScope::Direct(408258968),
+        session: SessionHandle {
+            codex_session_id: "sess-1".to_owned(),
+            display_name: "rust-rewrite".to_owned(),
+        },
+        workspace_root: "/workspace".to_owned(),
+    });
+    let controller = AppController::new(AppService::new(store, FakeRuntime, FakeTopics));
+    let requester = FakeRequester::default();
+    let update = parse_update(
+        r#"{
+            "message": {
+                "chat": {
+                    "id": 408258968,
+                    "first_name": "Baha",
+                    "type": "private",
+                    "username": "spacewhaleblues"
+                },
+                "date": 1721592580,
+                "entities": [
+                    {
+                        "length": 8,
+                        "offset": 0,
+                        "type": "bot_command"
+                    }
+                ],
+                "from": {
+                    "first_name": "Baha",
+                    "id": 408258968,
+                    "is_bot": false,
+                    "language_code": "en",
+                    "username": "spacewhaleblues"
+                },
+                "message_id": 134547,
+                "text": "/resume rust-rewrite"
+            },
+            "update_id": 439432601
+        }"#,
+    );
+
+    let outcome = run_ready(run_telegram_update(
+        &controller,
+        &requester,
+        &update,
+        None,
+        "/workspace",
+    ))
+    .expect("runtime ok");
+
+    let RuntimeOutcome::Replied { target, text } = outcome else {
+        panic!("expected reply outcome");
+    };
+    assert_eq!(target.chat_id, 408258968);
+    assert_eq!(target.message_thread_id, None);
+    assert!(text.contains("resumed") || text.contains("019d6361"));
+    let sent = requester.sent.lock().expect("fake requester lock poisoned");
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].0, 408258968);
+    assert_eq!(sent[0].1, None);
+    assert!(sent[0].2.contains("resumed") || sent[0].2.contains("019d6361"));
+}
+
+#[test]
 fn sends_resume_reply_into_existing_topic_thread() {
     let controller = controller();
     let requester = FakeRequester::default();
