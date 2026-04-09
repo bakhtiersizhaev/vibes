@@ -5,12 +5,14 @@ use vibes_app::{AppController, TelegramPromptExecutor, run_telegram_update};
 use crate::main_runtime::BotTopicManager;
 use crate::main_runtime_outcome::handle_runtime_outcome;
 
+type RuntimeController = AppController<
+    vibes_store::SqliteBindingStore,
+    vibes_codex::CodexExecRunner,
+    BotTopicManager,
+>;
+
 pub(crate) async fn handle_update<E>(
-    controller: &AppController<
-        vibes_store::SqliteBindingStore,
-        vibes_codex::CodexExecRunner,
-        BotTopicManager,
-    >,
+    controller: &RuntimeController,
     bot: &Bot,
     executor: &E,
     update: &teloxide::types::Update,
@@ -26,11 +28,7 @@ pub(crate) async fn handle_update<E>(
 }
 
 pub(crate) async fn handle_listener_item<E>(
-    controller: &AppController<
-        vibes_store::SqliteBindingStore,
-        vibes_codex::CodexExecRunner,
-        BotTopicManager,
-    >,
+    controller: &RuntimeController,
     bot: &Bot,
     executor: &E,
     item: Result<teloxide::types::Update, teloxide::RequestError>,
@@ -56,11 +54,7 @@ pub(crate) async fn handle_listener_item<E>(
 }
 
 pub(crate) async fn handle_next_listener_event<E>(
-    controller: &AppController<
-        vibes_store::SqliteBindingStore,
-        vibes_codex::CodexExecRunner,
-        BotTopicManager,
-    >,
+    controller: &RuntimeController,
     bot: &Bot,
     executor: &E,
     update: Option<Result<teloxide::types::Update, teloxide::RequestError>>,
