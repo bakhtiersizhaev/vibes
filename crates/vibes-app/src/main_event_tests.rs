@@ -10,9 +10,9 @@ use teloxide::{ApiError, Bot, RequestError, types::Update};
 use vibes_app::RuntimeOutcome;
 
 use crate::main_runtime::{
-    build_runtime_components, handle_listener_item, handle_prompt_ready,
-    handle_runtime_outcome, handle_update,
+    handle_listener_item, handle_prompt_ready, handle_runtime_outcome, handle_update,
 };
+use crate::main_startup::build_runtime_components;
 use crate::main_test_support::{
     NoopExecutor, PanicExecutor, RecordingExecutor, RecordingRequester, SharedWriter,
 };

@@ -7,12 +7,12 @@ mod main_event_tests;
 #[cfg(test)]
 mod main_loop_tests;
 mod main_runtime;
+mod main_startup;
 mod main_support;
 mod main_test_support;
 
-use main_runtime::{
-    CodexPromptExecutor, build_runtime_components, build_startup_context, run_polling_loop,
-};
+use main_runtime::{CodexPromptExecutor, run_polling_loop};
+use main_startup::{build_runtime_components, build_startup_context};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
