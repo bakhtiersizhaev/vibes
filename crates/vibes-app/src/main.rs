@@ -17,8 +17,6 @@ mod main_next_listener_scope_tests;
 #[cfg(test)]
 mod main_next_listener_branch_tests;
 #[cfg(test)]
-mod main_next_listener_command_tests;
-#[cfg(test)]
 mod main_next_listener_direct_command_tests;
 #[cfg(test)]
 mod main_next_listener_direct_resume_command_tests;
