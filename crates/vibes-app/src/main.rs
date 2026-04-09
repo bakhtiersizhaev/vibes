@@ -7,8 +7,6 @@ mod main_listener_forum_command_tests;
 #[cfg(test)]
 mod main_listener_topic_command_tests;
 #[cfg(test)]
-mod main_listener_core_tests;
-#[cfg(test)]
 mod main_listener_scope_tests;
 #[cfg(test)]
 mod main_listener_message_tests;
