@@ -9,12 +9,14 @@ use vibes_app::{AppController, TelegramPromptExecutor};
 use crate::main_runtime::BotTopicManager;
 use crate::main_runtime_handlers::handle_next_listener_event;
 
+type RuntimeController = AppController<
+    vibes_store::SqliteBindingStore,
+    vibes_codex::CodexExecRunner,
+    BotTopicManager,
+>;
+
 pub(crate) async fn run_polling_loop_with_shutdown<S, F, E>(
-    controller: &AppController<
-        vibes_store::SqliteBindingStore,
-        vibes_codex::CodexExecRunner,
-        BotTopicManager,
-    >,
+    controller: &RuntimeController,
     bot: &Bot,
     executor: &E,
     stream: S,
@@ -45,11 +47,7 @@ pub(crate) async fn run_polling_loop_with_shutdown<S, F, E>(
 }
 
 pub(crate) async fn run_polling_loop<S, E>(
-    controller: &AppController<
-        vibes_store::SqliteBindingStore,
-        vibes_codex::CodexExecRunner,
-        BotTopicManager,
-    >,
+    controller: &RuntimeController,
     bot: &Bot,
     executor: &E,
     stream: S,
@@ -74,11 +72,7 @@ pub(crate) async fn run_polling_loop<S, E>(
 }
 
 pub(crate) async fn start_polling_loop<E>(
-    controller: &AppController<
-        vibes_store::SqliteBindingStore,
-        vibes_codex::CodexExecRunner,
-        BotTopicManager,
-    >,
+    controller: &RuntimeController,
     bot: &Bot,
     executor: &E,
     bot_username: Option<&str>,
