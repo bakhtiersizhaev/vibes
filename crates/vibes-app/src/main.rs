@@ -57,6 +57,49 @@ impl TelegramPromptExecutor for CodexPromptExecutor<'_> {
     }
 }
 
+async fn handle_prompt_ready(
+    bot: &Bot,
+    executor: &impl TelegramPromptExecutor,
+    target: vibes_telegram::ReplyTarget,
+    binding: vibes_core::SessionBinding,
+    prompt: String,
+) {
+    info!(
+        chat_id = target.chat_id,
+        thread_id = target.message_thread_id,
+        scope = %binding.scope.scope_key(),
+        session_id = %binding.session.codex_session_id,
+        prompt_len = prompt.len(),
+        "prompt ready for codex execution"
+    );
+
+    match complete_runtime_outcome(
+        bot,
+        executor,
+        RuntimeOutcome::PromptReady {
+            target,
+            binding,
+            prompt,
+        },
+    )
+    .await
+    {
+        Ok(RuntimeOutcome::Replied { target, .. }) => {
+            info!(
+                chat_id = target.chat_id,
+                thread_id = target.message_thread_id,
+                "codex execution reply sent"
+            );
+        }
+        Ok(other) => {
+            info!(outcome = ?other, "unexpected runtime completion outcome");
+        }
+        Err(err) => {
+            error!(error = %err, "failed to complete codex execution outcome");
+        }
+    }
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -127,39 +170,7 @@ async fn main() -> anyhow::Result<()> {
                             binding,
                             prompt,
                         }) => {
-                            info!(
-                                chat_id = target.chat_id,
-                                thread_id = target.message_thread_id,
-                                scope = %binding.scope.scope_key(),
-                                session_id = %binding.session.codex_session_id,
-                                prompt_len = prompt.len(),
-                                "prompt ready for codex execution"
-                            );
-                            match complete_runtime_outcome(
-                                &bot,
-                                &executor,
-                                RuntimeOutcome::PromptReady {
-                                    target,
-                                    binding,
-                                    prompt,
-                                },
-                            )
-                            .await
-                            {
-                                Ok(RuntimeOutcome::Replied { target, .. }) => {
-                                    info!(
-                                        chat_id = target.chat_id,
-                                        thread_id = target.message_thread_id,
-                                        "codex execution reply sent"
-                                    );
-                                }
-                                Ok(other) => {
-                                    info!(outcome = ?other, "unexpected runtime completion outcome");
-                                }
-                                Err(err) => {
-                                    error!(error = %err, "failed to complete codex execution outcome");
-                                }
-                            }
+                            handle_prompt_ready(&bot, &executor, target, binding, prompt).await;
                         }
                         Err(err) => {
                             error!(error = %err, "failed to handle telegram update");
