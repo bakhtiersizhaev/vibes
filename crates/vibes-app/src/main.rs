@@ -83,7 +83,7 @@ mod main_build_runtime_reopen_tests;
 #[cfg(test)]
 mod main_build_runtime_error_tests;
 #[cfg(test)]
-mod main_codex_request_tests;
+mod main_codex_request_direct_tests;
 #[cfg(test)]
 mod main_runtime_path_tests;
 

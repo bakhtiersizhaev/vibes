@@ -9,7 +9,7 @@ use crate::main_test_support::{PanicExecutor, SharedWriter, unique_db_path};
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn run_polling_loop_logs_shutdown_and_stop() {
         let db_path = unique_db_path("vibes-loop-ctrlc-tests");
         if db_path.exists() {
