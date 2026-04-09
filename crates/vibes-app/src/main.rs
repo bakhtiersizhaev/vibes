@@ -298,6 +298,26 @@ mod tests {
     }
 
     #[test]
+    fn build_runtime_components_reopens_existing_sqlite_store() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let db_path =
+            std::env::temp_dir().join(format!("vibes-build-runtime-reopen-{unique}.sqlite3"));
+        if db_path.exists() {
+            std::fs::remove_file(&db_path).unwrap();
+        }
+
+        let bot = Bot::new("123456:TESTTOKEN");
+        let _ = build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+        let _ = build_runtime_components(&bot, db_path.to_str().unwrap()).unwrap();
+
+        assert!(db_path.exists());
+        std::fs::remove_file(db_path).unwrap();
+    }
+
+    #[test]
     fn build_runtime_components_returns_error_for_invalid_db_path() {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
