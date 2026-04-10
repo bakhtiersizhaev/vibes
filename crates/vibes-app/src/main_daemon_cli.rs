@@ -167,6 +167,21 @@ pub(crate) fn status_output(root: &Path) -> String {
     render_status_snapshot(&resolve_status_snapshot(root))
 }
 
+pub(crate) fn looks_like_vibes_process(cmdline: &str, root: &Path) -> bool {
+    let bot_path = root.join("vibes.py");
+    if let Ok(resolved) = bot_path.canonicalize() {
+        if cmdline.contains(&resolved.display().to_string()) {
+            return true;
+        }
+    }
+    if cmdline.contains("vibes.py") && cmdline.contains(&root.display().to_string()) {
+        return true;
+    }
+    cmdline.contains(" -m vibes")
+        || cmdline.ends_with(" -m vibes")
+        || cmdline.ends_with(" -m vibes.py")
+}
+
 pub(crate) fn run_status_command(root: &Path) -> StatusResult {
     let snapshot = resolve_status_snapshot(root);
     let exit_code = if snapshot.state.is_some() { 0 } else { 3 };
@@ -923,6 +938,30 @@ VIBES_ADMIN_ID=999
     }
 
     #[test]
+    #[test]
+    fn looks_like_vibes_process_matches_python_contract() {
+        let root = std::env::temp_dir().join("vibes-daemon-looks-like");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("vibes.py"), "print(\'hi\')\n").unwrap();
+        let bot_path = root.join("vibes.py").canonicalize().unwrap();
+        assert!(looks_like_vibes_process(&format!("/usr/bin/python3 {}", bot_path.display()), &root));
+        assert!(looks_like_vibes_process(&format!("python3 {}/vibes.py", root.display()), &root));
+        assert!(looks_like_vibes_process("python3 -m vibes", &root));
+        assert!(!looks_like_vibes_process("python3 other.py", &root));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn looks_like_vibes_process_handles_missing_script() {
+        let root = std::env::temp_dir().join("vibes-daemon-looks-like-missing");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        assert!(looks_like_vibes_process(&format!("python3 {}/vibes.py", root.display()), &root));
+        assert!(!looks_like_vibes_process("python3 other.py", &root));
+        let _ = fs::remove_dir_all(&root);
+    }
+
     fn run_status_command_returns_running_exit_code() {
         let root = std::env::temp_dir().join("vibes-daemon-run-status-running");
         let _ = fs::remove_dir_all(&root);
