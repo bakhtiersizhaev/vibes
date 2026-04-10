@@ -1,4 +1,56 @@
 use clap::{Args, Parser, Subcommand};
+use std::collections::HashMap;
+
+pub(crate) const ENV_TOKEN_KEYS: &[&str] = &[
+    "VIBES_TOKEN",
+    "VIBES_TELEGRAM_TOKEN",
+    "TELEGRAM_BOT_TOKEN",
+    "BOT_TOKEN",
+    "TALKING_TOKEN",
+    "TALKING",
+    "Talking",
+];
+
+pub(crate) const ENV_ADMIN_KEYS: &[&str] = &[
+    "VIBES_ADMIN_ID",
+    "VIBES_TELEGRAM_ADMIN_ID",
+    "TELEGRAM_ADMIN_ID",
+    "ADMIN_ID",
+];
+
+pub(crate) const ENV_PYTHON_KEYS: &[&str] = &[
+    "VIBES_PYTHON",
+    "VIBES_PYTHON_BIN",
+];
+
+fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
+    override_value.filter(|value| !value.trim().is_empty()).or_else(|| {
+        keys.iter().find_map(|key| {
+            env.get(*key)
+                .map(String::as_str)
+                .filter(|value| !value.trim().is_empty())
+        })
+    })
+}
+
+pub(crate) fn resolve_token<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>) -> Option<&'a str> {
+    first_non_empty(override_value, env, ENV_TOKEN_KEYS)
+}
+
+pub(crate) fn resolve_python<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>) -> Option<&'a str> {
+    first_non_empty(override_value, env, ENV_PYTHON_KEYS)
+}
+
+pub(crate) fn resolve_admin_id(override_value: Option<i64>, env: &HashMap<String, String>) -> Option<i64> {
+    override_value.or_else(|| {
+        ENV_ADMIN_KEYS.iter().find_map(|key| {
+            env.get(*key)
+                .map(String::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .and_then(|value| value.parse::<i64>().ok())
+        })
+    })
+}
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(name = "vibes", about = "Rust daemon/runtime entrypoint for vibes")]
@@ -109,5 +161,31 @@ mod tests {
     fn parses_logs_follow() {
         let cli = Cli::parse_from(["vibes", "logs", "--follow"]);
         assert_eq!(cli.command, Some(Command::Logs(LogsArgs { follow: true })));
+    }
+
+    #[test]
+    fn resolve_token_prefers_override_then_env_priority() {
+        let mut env = HashMap::new();
+        env.insert("BOT_TOKEN".to_owned(), "bot-token".to_owned());
+        env.insert("VIBES_TOKEN".to_owned(), "primary-token".to_owned());
+        assert_eq!(resolve_token(None, &env), Some("primary-token"));
+        assert_eq!(resolve_token(Some("override-token"), &env), Some("override-token"));
+    }
+
+    #[test]
+    fn resolve_admin_id_prefers_override_and_skips_invalid_values() {
+        let mut env = HashMap::new();
+        env.insert("ADMIN_ID".to_owned(), "oops".to_owned());
+        env.insert("TELEGRAM_ADMIN_ID".to_owned(), "456".to_owned());
+        assert_eq!(resolve_admin_id(None, &env), Some(456));
+        assert_eq!(resolve_admin_id(Some(123), &env), Some(123));
+    }
+
+    #[test]
+    fn resolve_python_uses_first_non_empty_env_value() {
+        let mut env = HashMap::new();
+        env.insert("VIBES_PYTHON".to_owned(), "".to_owned());
+        env.insert("VIBES_PYTHON_BIN".to_owned(), "/usr/bin/python3".to_owned());
+        assert_eq!(resolve_python(None, &env), Some("/usr/bin/python3"));
     }
 }
