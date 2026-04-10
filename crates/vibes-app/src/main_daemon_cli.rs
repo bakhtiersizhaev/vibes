@@ -88,6 +88,28 @@ pub(crate) fn resolve_status_snapshot(root: &Path) -> StatusSnapshot {
     StatusSnapshot { paths, state }
 }
 
+pub(crate) fn render_status_snapshot(snapshot: &StatusSnapshot) -> String {
+    let mut lines = vec![
+        format!("env: {}", snapshot.paths.env_path.display()),
+        format!("runtime: {}", snapshot.paths.runtime_dir.display()),
+        format!("state: {}", snapshot.paths.state_path.display()),
+        format!("log: {}", snapshot.paths.daemon_log_path.display()),
+    ];
+    match &snapshot.state {
+        Some(state) => {
+            lines.push(format!("pid: {}", state.pid));
+            lines.push(format!("started_at: {}", state.started_at));
+            lines.push(format!("cwd: {}", state.cwd));
+            lines.push(format!("env_path: {}", state.env_path));
+            lines.push(format!("daemon_log: {}", state.daemon_log));
+            lines.push(format!("cmd: {}", state.cmd.join(" ")));
+        }
+        None => lines.push("state: missing".to_owned()),
+    }
+    lines.join("
+")
+}
+
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
     override_value.filter(|value| !value.trim().is_empty()).or_else(|| {
         keys.iter().find_map(|key| {
@@ -409,5 +431,47 @@ mod tests {
         let snapshot = resolve_status_snapshot(&root);
         assert_eq!(snapshot.paths.state_path, root.join(".vibes/daemon.json"));
         assert_eq!(snapshot.state, None);
+    }
+
+    #[test]
+    fn render_status_snapshot_includes_running_state_fields() {
+        let snapshot = StatusSnapshot {
+            paths: DaemonPaths {
+                env_path: PathBuf::from("/tmp/vibes/.env"),
+                runtime_dir: PathBuf::from("/tmp/vibes/.vibes"),
+                state_path: PathBuf::from("/tmp/vibes/.vibes/daemon.json"),
+                daemon_log_path: PathBuf::from("/tmp/vibes/.vibes/daemon.log"),
+            },
+            state: Some(DaemonState {
+                pid: 123,
+                started_at: "2026-04-10T03:00:00Z".to_owned(),
+                cmd: vec!["vibes".to_owned(), "start".to_owned()],
+                cwd: "/tmp/vibes".to_owned(),
+                env_path: "/tmp/vibes/.env".to_owned(),
+                daemon_log: "/tmp/vibes/.vibes/daemon.log".to_owned(),
+            }),
+        };
+        let rendered = render_status_snapshot(&snapshot);
+        assert!(rendered.contains("pid: 123"));
+        assert!(rendered.contains("started_at: 2026-04-10T03:00:00Z"));
+        assert!(rendered.contains("cmd: vibes start"));
+        assert!(rendered.contains("log: /tmp/vibes/.vibes/daemon.log"));
+    }
+
+    #[test]
+    fn render_status_snapshot_marks_missing_state() {
+        let snapshot = StatusSnapshot {
+            paths: DaemonPaths {
+                env_path: PathBuf::from("/tmp/vibes/.env"),
+                runtime_dir: PathBuf::from("/tmp/vibes/.vibes"),
+                state_path: PathBuf::from("/tmp/vibes/.vibes/daemon.json"),
+                daemon_log_path: PathBuf::from("/tmp/vibes/.vibes/daemon.log"),
+            },
+            state: None,
+        };
+        let rendered = render_status_snapshot(&snapshot);
+        assert!(rendered.contains("state: missing"));
+        assert!(rendered.contains("env: /tmp/vibes/.env"));
+        assert!(rendered.contains("log: /tmp/vibes/.vibes/daemon.log"));
     }
 }
