@@ -76,6 +76,18 @@ pub(crate) fn write_state(path: &Path, state: &DaemonState) -> std::io::Result<(
     fs::rename(&tmp, path)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StatusSnapshot {
+    pub paths: DaemonPaths,
+    pub state: Option<DaemonState>,
+}
+
+pub(crate) fn resolve_status_snapshot(root: &Path) -> StatusSnapshot {
+    let paths = daemon_paths(root);
+    let state = load_state(&paths.state_path);
+    StatusSnapshot { paths, state }
+}
+
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
     override_value.filter(|value| !value.trim().is_empty()).or_else(|| {
         keys.iter().find_map(|key| {
@@ -357,7 +369,7 @@ mod tests {
             cmd: vec!["python3".to_owned(), "vibes.py".to_owned()],
             cwd: "/tmp/vibes".to_owned(),
             env_path: "/tmp/vibes/.env".to_owned(),
-            daemon_log: "/tmp/vibes/.vibes-runtime/daemon.log".to_owned(),
+            daemon_log: "/tmp/vibes/.vibes/daemon.log".to_owned(),
         };
         let value = serde_json::to_value(&state).unwrap();
         assert_eq!(value["pid"], 12345);
@@ -365,8 +377,37 @@ mod tests {
         assert_eq!(value["cmd"][0], "python3");
         assert_eq!(value["cwd"], "/tmp/vibes");
         assert_eq!(value["env_path"], "/tmp/vibes/.env");
-        assert_eq!(value["daemon_log"], "/tmp/vibes/.vibes-runtime/daemon.log");
+        assert_eq!(value["daemon_log"], "/tmp/vibes/.vibes/daemon.log");
         let restored: DaemonState = serde_json::from_value(value).unwrap();
         assert_eq!(restored, state);
+    }
+
+    #[test]
+    fn resolve_status_snapshot_returns_paths_and_state() {
+        let root = std::env::temp_dir().join("vibes-daemon-status-snapshot");
+        let _ = fs::remove_dir_all(&root);
+        let paths = daemon_paths(&root);
+        let state = DaemonState {
+            pid: 99,
+            started_at: "2026-04-10T02:00:00Z".to_owned(),
+            cmd: vec!["vibes".to_owned(), "start".to_owned()],
+            cwd: "/tmp/vibes".to_owned(),
+            env_path: "/tmp/vibes/.env".to_owned(),
+            daemon_log: "/tmp/vibes/.vibes/daemon.log".to_owned(),
+        };
+        write_state(&paths.state_path, &state).unwrap();
+        let snapshot = resolve_status_snapshot(&root);
+        assert_eq!(snapshot.paths, paths);
+        assert_eq!(snapshot.state, Some(state));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_status_snapshot_handles_missing_state() {
+        let root = std::env::temp_dir().join("vibes-daemon-status-snapshot-missing");
+        let _ = fs::remove_dir_all(&root);
+        let snapshot = resolve_status_snapshot(&root);
+        assert_eq!(snapshot.paths.state_path, root.join(".vibes/daemon.json"));
+        assert_eq!(snapshot.state, None);
     }
 }
