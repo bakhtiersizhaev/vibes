@@ -75,6 +75,25 @@ pub(crate) fn resolve_admin_id(override_value: Option<i64>, env: &HashMap<String
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedStartConfig {
+    pub token: Option<String>,
+    pub admin_id: Option<i64>,
+    pub python_bin: Option<String>,
+    pub env_path: Option<String>,
+    pub restart: bool,
+}
+
+pub(crate) fn resolve_start_config(args: &StartArgs, env: &HashMap<String, String>) -> ResolvedStartConfig {
+    ResolvedStartConfig {
+        token: resolve_token(args.token.as_deref(), env).map(str::to_owned),
+        admin_id: resolve_admin_id(args.admin, env),
+        python_bin: resolve_python(None, env).map(str::to_owned),
+        env_path: args.env.clone(),
+        restart: args.restart,
+    }
+}
+
 #[derive(Debug, Parser, PartialEq)]
 #[command(name = "vibes", about = "Rust daemon/runtime entrypoint for vibes")]
 pub(crate) struct Cli {
@@ -220,5 +239,51 @@ mod tests {
         assert_eq!(paths.runtime_dir, PathBuf::from("/tmp/vibes-root/.vibes-runtime"));
         assert_eq!(paths.state_path, PathBuf::from("/tmp/vibes-root/.vibes-runtime/daemon.json"));
         assert_eq!(paths.daemon_log_path, PathBuf::from("/tmp/vibes-root/.vibes-runtime/daemon.log"));
+    }
+
+    #[test]
+    fn resolve_start_config_combines_cli_and_env() {
+        let args = StartArgs {
+            token: Some("cli-token".to_owned()),
+            admin: None,
+            env: Some(".env.custom".to_owned()),
+            restart: true,
+        };
+        let mut env = HashMap::new();
+        env.insert("TELEGRAM_ADMIN_ID".to_owned(), "456".to_owned());
+        env.insert("VIBES_PYTHON_BIN".to_owned(), "/usr/bin/python3".to_owned());
+        assert_eq!(
+            resolve_start_config(&args, &env),
+            ResolvedStartConfig {
+                token: Some("cli-token".to_owned()),
+                admin_id: Some(456),
+                python_bin: Some("/usr/bin/python3".to_owned()),
+                env_path: Some(".env.custom".to_owned()),
+                restart: true,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_start_config_uses_env_for_missing_values() {
+        let args = StartArgs {
+            token: None,
+            admin: Some(123),
+            env: None,
+            restart: false,
+        };
+        let mut env = HashMap::new();
+        env.insert("VIBES_TOKEN".to_owned(), "env-token".to_owned());
+        env.insert("VIBES_PYTHON".to_owned(), "/opt/python".to_owned());
+        assert_eq!(
+            resolve_start_config(&args, &env),
+            ResolvedStartConfig {
+                token: Some("env-token".to_owned()),
+                admin_id: Some(123),
+                python_bin: Some("/opt/python".to_owned()),
+                env_path: None,
+                restart: false,
+            }
+        );
     }
 }
