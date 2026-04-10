@@ -110,6 +110,10 @@ pub(crate) fn render_status_snapshot(snapshot: &StatusSnapshot) -> String {
 ")
 }
 
+pub(crate) fn status_output(root: &Path) -> String {
+    render_status_snapshot(&resolve_status_snapshot(root))
+}
+
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
     override_value.filter(|value| !value.trim().is_empty()).or_else(|| {
         keys.iter().find_map(|key| {
@@ -473,5 +477,37 @@ mod tests {
         assert!(rendered.contains("state: missing"));
         assert!(rendered.contains("env: /tmp/vibes/.env"));
         assert!(rendered.contains("log: /tmp/vibes/.vibes/daemon.log"));
+    }
+
+    #[test]
+    fn status_output_renders_running_daemon_snapshot() {
+        let root = std::env::temp_dir().join("vibes-daemon-status-output-running");
+        let _ = fs::remove_dir_all(&root);
+        let paths = daemon_paths(&root);
+        let state = DaemonState {
+            pid: 321,
+            started_at: "2026-04-10T04:00:00Z".to_owned(),
+            cmd: vec!["vibes".to_owned(), "start".to_owned()],
+            cwd: "/tmp/vibes".to_owned(),
+            env_path: "/tmp/vibes/.env".to_owned(),
+            daemon_log: "/tmp/vibes/.vibes/daemon.log".to_owned(),
+        };
+        write_state(&paths.state_path, &state).unwrap();
+        let rendered = status_output(&root);
+        assert!(rendered.contains("pid: 321"));
+        assert!(rendered.contains("cmd: vibes start"));
+        assert!(rendered.contains("runtime: /tmp" ) == false); // sanity: use actual root-derived paths
+        assert!(rendered.contains(&format!("state: {}", paths.state_path.display())));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn status_output_renders_missing_daemon_state() {
+        let root = std::env::temp_dir().join("vibes-daemon-status-output-missing");
+        let _ = fs::remove_dir_all(&root);
+        let rendered = status_output(&root);
+        assert!(rendered.contains("state: missing"));
+        assert!(rendered.contains("runtime: /tmp") == false);
+        assert!(rendered.contains(&format!("state: {}", root.join(".vibes/daemon.json").display())));
     }
 }
