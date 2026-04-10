@@ -257,6 +257,48 @@ pub(crate) fn resolve_start_context(root: &Path, args: &StartArgs) -> StartConte
     }
 }
 
+pub(crate) fn run_start_command(root: &Path, args: &StartArgs) -> anyhow::Result<String> {
+    let context = resolve_start_context(root, args);
+    let token = context
+        .config
+        .token
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!(
+            "Не найден токен. Создай {} и укажи VIBES_TOKEN=... или передай --token",
+            context.env_path.display()
+        ))?;
+    let paths = daemon_paths(root);
+    Ok(format!(
+        concat!(
+            "start preflight ready\n",
+            "env: {}\n",
+            "runtime: {}\n",
+            "state: {}\n",
+            "log: {}\n",
+            "token: present\n",
+            "admin_id: {}\n",
+            "python: {}\n",
+            "restart: {}\n",
+            "mode: Rust start wiring not finished yet"
+        ),
+        context.env_path.display(),
+        paths.runtime_dir.display(),
+        paths.state_path.display(),
+        paths.daemon_log_path.display(),
+        context
+            .config
+            .admin_id
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        context
+            .config
+            .python_bin
+            .clone()
+            .unwrap_or_else(|| "none".to_owned()),
+        context.config.restart,
+    ))
+}
+
 #[derive(Debug, Parser, PartialEq)]
 #[command(name = "vibes", about = "Rust daemon/runtime entrypoint for vibes")]
 pub(crate) struct Cli {
@@ -694,13 +736,59 @@ VIBES_ADMIN_ID=999
     #[test]
     fn run_cli_command_rejects_unwired_commands() {
         let root = std::env::temp_dir().join("vibes-daemon-run-cli-unwired");
-        let err = run_cli_command(&Command::Start(StartArgs {
-            token: None,
-            admin: None,
-            env: None,
-            restart: false,
+        let err = run_cli_command(&Command::Stop(StopArgs {
+            force: false,
+            timeout: 10.0,
         }), &root).unwrap_err();
         assert!(err.to_string().contains("not wired to Rust daemon runtime yet"));
+    }
+
+    #[test]
+    fn run_start_command_returns_preflight_summary() {
+        let root = std::env::temp_dir().join("vibes-daemon-start-preflight");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join(".env"),
+            "VIBES_TOKEN=env-token\nVIBES_ADMIN_ID=42\nVIBES_PYTHON_BIN=/usr/bin/python3\n",
+        )
+        .unwrap();
+        let output = run_start_command(
+            &root,
+            &StartArgs {
+                token: None,
+                admin: None,
+                env: None,
+                restart: true,
+            },
+        )
+        .unwrap();
+        assert!(output.contains("start preflight ready"));
+        assert!(output.contains("token: present"));
+        assert!(output.contains("admin_id: 42"));
+        assert!(output.contains("python: /usr/bin/python3"));
+        assert!(output.contains("restart: true"));
+        assert!(output.contains("mode: Rust start wiring not finished yet"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn run_start_command_errors_when_token_missing() {
+        let root = std::env::temp_dir().join("vibes-daemon-start-missing-token");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let err = run_start_command(
+            &root,
+            &StartArgs {
+                token: None,
+                admin: None,
+                env: None,
+                restart: false,
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("Не найден токен"));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
