@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -44,6 +45,16 @@ pub(crate) fn daemon_paths(root: &Path) -> DaemonPaths {
         daemon_log_path: runtime_dir.join("daemon.log"),
         runtime_dir,
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct DaemonState {
+    pub pid: i32,
+    pub started_at: String,
+    pub cmd: Vec<String>,
+    pub cwd: String,
+    pub env_path: String,
+    pub daemon_log: String,
 }
 
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
@@ -285,5 +296,26 @@ mod tests {
                 restart: false,
             }
         );
+    }
+
+    #[test]
+    fn daemon_state_roundtrips_to_python_compatible_json() {
+        let state = DaemonState {
+            pid: 12345,
+            started_at: "2026-04-10T00:00:00Z".to_owned(),
+            cmd: vec!["python3".to_owned(), "vibes.py".to_owned()],
+            cwd: "/tmp/vibes".to_owned(),
+            env_path: "/tmp/vibes/.env".to_owned(),
+            daemon_log: "/tmp/vibes/.vibes-runtime/daemon.log".to_owned(),
+        };
+        let value = serde_json::to_value(&state).unwrap();
+        assert_eq!(value["pid"], 12345);
+        assert_eq!(value["started_at"], "2026-04-10T00:00:00Z");
+        assert_eq!(value["cmd"][0], "python3");
+        assert_eq!(value["cwd"], "/tmp/vibes");
+        assert_eq!(value["env_path"], "/tmp/vibes/.env");
+        assert_eq!(value["daemon_log"], "/tmp/vibes/.vibes-runtime/daemon.log");
+        let restored: DaemonState = serde_json::from_value(value).unwrap();
+        assert_eq!(restored, state);
     }
 }
