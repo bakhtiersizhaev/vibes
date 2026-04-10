@@ -91,6 +91,7 @@ mod main_build_runtime_create_tests;
 mod main_build_runtime_reopen_tests;
 #[cfg(test)]
 mod main_build_runtime_error_tests;
+mod main_daemon_cli;
 #[cfg(test)]
 mod main_codex_request_direct_tests;
 #[cfg(test)]
