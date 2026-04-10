@@ -49,6 +49,52 @@ pub(crate) fn daemon_paths(root: &Path) -> DaemonPaths {
     }
 }
 
+pub(crate) fn parse_env_file(path: &Path) -> HashMap<String, String> {
+    let Ok(content) = fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+
+    let mut out = HashMap::new();
+    for raw_line in content.lines() {
+        let mut line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("export ") {
+            line = rest.trim_start();
+        }
+        let Some((key_raw, value_raw)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key_raw.trim();
+        if key.is_empty() {
+            continue;
+        }
+
+        let mut value = value_raw.trim().to_owned();
+        if let Some(first) = value.chars().next() {
+            if first != '\'' && first != '"' {
+                if let Some(idx) = value.find(" #") {
+                    value.truncate(idx);
+                    value = value.trim_end().to_owned();
+                }
+            }
+        }
+
+        if value.len() >= 2 {
+            let bytes = value.as_bytes();
+            let first = bytes[0] as char;
+            let last = bytes[value.len() - 1] as char;
+            if (first == '\'' || first == '"') && first == last {
+                value = value[1..value.len() - 1].to_owned();
+            }
+        }
+
+        out.insert(key.to_owned(), value);
+    }
+    out
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct DaemonState {
     pub pid: i32,
@@ -334,6 +380,33 @@ mod tests {
         assert_eq!(paths.runtime_dir, PathBuf::from("/tmp/vibes-root/.vibes"));
         assert_eq!(paths.state_path, PathBuf::from("/tmp/vibes-root/.vibes/daemon.json"));
         assert_eq!(paths.daemon_log_path, PathBuf::from("/tmp/vibes-root/.vibes/daemon.log"));
+    }
+
+    #[test]
+    fn parse_env_file_matches_python_contract() {
+        let path = std::env::temp_dir().join("vibes-daemon-env-parse.env");
+        let _ = fs::remove_file(&path);
+        fs::write(
+            &path,
+            "# comment\nexport VIBES_TOKEN=abc123\nVIBES_ADMIN_ID=42 # inline comment\nQUOTED=\"hello world\"\nSINGLE='quoted value'\nEMPTY=\nIGNORED_LINE\n",
+        )
+        .unwrap();
+        let env = parse_env_file(&path);
+        assert_eq!(env.get("VIBES_TOKEN").map(String::as_str), Some("abc123"));
+        assert_eq!(env.get("VIBES_ADMIN_ID").map(String::as_str), Some("42"));
+        assert_eq!(env.get("QUOTED").map(String::as_str), Some("hello world"));
+        assert_eq!(env.get("SINGLE").map(String::as_str), Some("quoted value"));
+        assert_eq!(env.get("EMPTY").map(String::as_str), Some(""));
+        assert!(!env.contains_key("IGNORED_LINE"));
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parse_env_file_returns_empty_for_missing_file() {
+        let path = std::env::temp_dir().join("vibes-daemon-missing.env");
+        let _ = fs::remove_file(&path);
+        let env = parse_env_file(&path);
+        assert!(env.is_empty());
     }
 
     #[test]
