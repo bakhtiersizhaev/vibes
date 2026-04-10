@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub(crate) const ENV_TOKEN_KEYS: &[&str] = &[
     "VIBES_TOKEN",
@@ -22,6 +23,28 @@ pub(crate) const ENV_PYTHON_KEYS: &[&str] = &[
     "VIBES_PYTHON",
     "VIBES_PYTHON_BIN",
 ];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DaemonPaths {
+    pub env_path: PathBuf,
+    pub runtime_dir: PathBuf,
+    pub state_path: PathBuf,
+    pub daemon_log_path: PathBuf,
+}
+
+pub(crate) fn default_env_path(root: &Path) -> PathBuf {
+    root.join(".env")
+}
+
+pub(crate) fn daemon_paths(root: &Path) -> DaemonPaths {
+    let runtime_dir = root.join(".vibes-runtime");
+    DaemonPaths {
+        env_path: default_env_path(root),
+        state_path: runtime_dir.join("daemon.json"),
+        daemon_log_path: runtime_dir.join("daemon.log"),
+        runtime_dir,
+    }
+}
 
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
     override_value.filter(|value| !value.trim().is_empty()).or_else(|| {
@@ -187,5 +210,15 @@ mod tests {
         env.insert("VIBES_PYTHON".to_owned(), "".to_owned());
         env.insert("VIBES_PYTHON_BIN".to_owned(), "/usr/bin/python3".to_owned());
         assert_eq!(resolve_python(None, &env), Some("/usr/bin/python3"));
+    }
+
+    #[test]
+    fn daemon_paths_follow_python_daemon_layout() {
+        let root = Path::new("/tmp/vibes-root");
+        let paths = daemon_paths(root);
+        assert_eq!(paths.env_path, PathBuf::from("/tmp/vibes-root/.env"));
+        assert_eq!(paths.runtime_dir, PathBuf::from("/tmp/vibes-root/.vibes-runtime"));
+        assert_eq!(paths.state_path, PathBuf::from("/tmp/vibes-root/.vibes-runtime/daemon.json"));
+        assert_eq!(paths.daemon_log_path, PathBuf::from("/tmp/vibes-root/.vibes-runtime/daemon.log"));
     }
 }
