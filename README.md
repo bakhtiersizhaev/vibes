@@ -1,152 +1,152 @@
 # vibes
 
-`vibes.py` — Telegram-бот “session manager” для Codex CLI и Claude Code.
-`vibes` — CLI-скрипт для запуска/статуса/остановки бота в фоне.
+Telegram bot that manages Codex CLI sessions from your phone. Create sessions, resume them, and interact with Codex — all through Telegram supergroups, forum topics, and DMs.
 
-Это форк с beta-улучшениями UX и поддержкой Claude Code.
-Оригинальный репозиторий и автор — большие молодцы; мы стараемся бережно расширять функционал.
+Built in Rust with teloxide, tokio, and SQLite persistence.
 
-## Самый простой старт (4 шага)
+## Quick Start
 
-1) Клонируй репозиторий и зайди в папку:
+### 1. Prerequisites
+
+- Rust 1.92+ (install via [rustup](https://rustup.rs))
+- `codex` CLI in `PATH` with a configured API key
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+
+### 2. Build
 
 ```bash
-git clone https://github.com/shlgd/vibes.git
+git clone https://github.com/bakhtiersizhaev/vibes.git
 cd vibes
+cargo build --release
 ```
 
-2) Скопируй шаблон окружения и заполни токен:
+The binary is at `target/release/vibes`.
+
+### 3. Configure
 
 ```bash
-cp .env.example .env
+./target/release/vibes init
 ```
 
-3) Запусти установку (одна команда):
+This creates a `.env` file. Edit it and set your bot token:
 
 ```bash
-./setup.sh
+# Required
+VIBES_TOKEN=your-telegram-bot-token
+
+# Optional
+# VIBES_ADMIN_ID=your-telegram-user-id
+# VIBES_CODEX_SANDBOX=networking
+# VIBES_CODEX_APPROVAL_POLICY=never
+# VIBES_CLAUDE_MODEL=sonnet
+# VIBES_CLAUDE_PERMISSION_MODE=bypassPermissions
+# VIBES_DEFAULT_PROJECTS_DIR=~/projects
 ```
 
-Если видишь `Permission denied`, сделай:
+### 4. Run
+
+Start the bot directly:
 
 ```bash
-chmod +x setup.sh
+VIBES_TOKEN=your-token ./target/release/vibes
 ```
 
-4) Открой Telegram → напиши боту `/start`
-
-Проверить что работает:
+Or as a background daemon:
 
 ```bash
-vibes status
+./target/release/vibes start
 ```
 
-## Команды (самое нужное)
+### 5. Use
+
+Open Telegram and message your bot:
+
+- `/new` — Create a new Codex session (creates a forum topic in supergroups)
+- `/resume <session-id>` — Resume an existing session
+- Any text message — Sends a prompt to the bound Codex session
+
+## CLI Commands
 
 ```bash
-vibes status
-vibes logs -f
-vibes stop
-vibes start --restart
-vibes help
+vibes              # Start bot in foreground (polling mode)
+vibes init         # Create .env template
+vibes start        # Start bot as background daemon
+vibes start --restart  # Restart running daemon
+vibes status       # Check if daemon is running
+vibes stop         # Stop the daemon
+vibes logs         # Show recent log output
+vibes logs --follow    # Tail logs in real-time
+vibes setup        # Interactive setup (creates .env, optionally starts bot)
 ```
 
-## Что нового в этой beta-ветке
+## Architecture
 
-- Выбор движка в мастере создания сессии: **Codex CLI** или **Claude Code**
-- Явный выбор пути: **создать в Documents** или **указать полный путь**
-- Ответы CLI приходят отдельными сообщениями → история диалога сохраняется
-- “Инфо” по сессии теперь в меню (кнопка `ℹ️`), без навязчивых уведомлений
+The project is a Rust workspace with modular crates:
 
-## Подробности
+```
+crates/
+  vibes-app/       # App bootstrap, CLI, polling runtime, Telegram routing
+  vibes-core/      # Domain model: commands, scopes, sessions, bindings
+  vibes-telegram/  # Telegram Bot API adapter (teloxide), forum topic handling
+  vibes-codex/     # Codex CLI process adapter, JSONL event parser, streaming
+  vibes-store/     # SQLite persistence for session bindings
+  vibes-testkit/   # Test fixtures and e2e harness
+```
 
-### Требования
+## Features
 
-- `python3` версии **3.10+**
-- `git`
-- `codex` в `PATH` + настроенный API key (для Codex-сессий)
-- `claude` в `PATH` (для Claude Code-сессий)
+- **Supergroup forum topics** — Each `/new` session gets its own topic thread
+- **DM sessions** — Works in private messages without topics
+- **Session persistence** — Bindings survive restarts (SQLite)
+- **Codex streaming** — Parses `codex exec --json` output in real-time
+- **Session resume** — `/resume <id>` rebinds to an existing Codex session
+- **Daemon management** — start/stop/status/logs like a proper service
+- **Mobile-first UX** — Compact, readable messages for phone screens
 
-### Engines: Codex vs Claude
+## Environment Variables
 
-В мастере создания сессии выбираешь движок:
-- **Codex CLI** (по умолчанию)
-- **Claude Code**
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VIBES_TOKEN` | Yes | Telegram Bot API token |
+| `VIBES_ADMIN_ID` | No | Telegram user ID for admin commands |
+| `VIBES_DB_PATH` | No | SQLite database path (default: `.vibes/db.sqlite`) |
+| `VIBES_WORKSPACE_ROOT` | No | Root directory for Codex sessions |
+| `VIBES_CODEX_SANDBOX` | No | Codex sandbox mode |
+| `VIBES_CODEX_APPROVAL_POLICY` | No | Codex approval policy |
+| `VIBES_CLAUDE_MODEL` | No | Claude model override |
+| `VIBES_CLAUDE_PERMISSION_MODE` | No | Claude permission mode |
+| `VIBES_DEFAULT_PROJECTS_DIR` | No | Default directory for new sessions |
 
-Для Claude можно задать:
-- `VIBES_CLAUDE_MODEL=sonnet`
-- `VIBES_CLAUDE_PERMISSION_MODE=bypassPermissions`
+## File Locations
 
-### Как получить Telegram bot token
+| File | Path |
+|------|------|
+| Config | `.env` |
+| Daemon state | `.vibes/daemon.json` |
+| Daemon log | `.vibes/daemon.log` |
+| Session database | `.vibes/db.sqlite` |
 
-1) Открой Telegram: `@BotFather`
-2) Команда: `/newbot`
-3) Скопируй выданный token (это `VIBES_TOKEN`)
-
-### Где лежат конфиг/логи/состояние
-
-- Конфиг: `<repo>/.env`
-- Рантайм/стейт: `<repo>/.vibes/daemon.json`
-- Логи демона: `<repo>/.vibes/daemon.log` (удобно: `vibes logs -f`)
-
-### Выбор пути для сессии
-
-- В шаге “Где работать?” есть два варианта:
-  - **Создать в Documents** — ты вводишь только имя папки, она создаётся в `~/Documents`
-  - **Указать полный путь** — ты вводишь директорию целиком
-- Базовую папку можно переопределить: `VIBES_DEFAULT_PROJECTS_DIR=/path/to/projects`
-
-### Пример .env (шаблон)
-
-Смотри файл `.env.example`. Минимально нужно задать `VIBES_TOKEN`.
+## Development
 
 ```bash
-# Telegram bot token (required)
-VIBES_TOKEN=
+# Run tests
+cargo test --workspace --all-features
 
-# Your Telegram numeric user_id (optional)
-# VIBES_ADMIN_ID=
+# Check formatting + lints
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Codex CLI settings
-VIBES_CODEX_SANDBOX=danger-full-access
-VIBES_CODEX_APPROVAL_POLICY=never
-
-# Claude Code settings
-VIBES_CLAUDE_MODEL=sonnet
-VIBES_CLAUDE_PERMISSION_MODE=bypassPermissions
-
-# Optional: default projects root (overrides ~/Documents)
-# VIBES_DEFAULT_PROJECTS_DIR=~/Documents
+# Build debug
+cargo build --workspace
 ```
-
-### Uninstall
-
-```bash
-./uninstall.sh
-```
-
-Без подтверждения:
-
-```bash
-./uninstall.sh --yes
-```
-
-## STATUS.MD refresh
-
-To sync the metadata header in `STATUS.MD` with the current repo state, run:
-
-```bash
-python3 scripts/update_status_md.py
-```
-
-It refreshes only these header fields:
-- `Last updated`
-- `Branch`
-- `Repo`
-- `Main SHA`
 
 ## Troubleshooting
 
-- `vibes: command not found`: перезапусти терминал или выполни `source ~/.zshrc` / `source ~/.bashrc` / `source ~/.profile`
-- Нет `codex` в `PATH`: установи Codex CLI, настрой API key, затем `vibes start --restart`
-- Где смотреть логи: `vibes logs -f` (путь также печатает `vibes logs`)
+- **Bot doesn't respond**: Check `vibes status` and `vibes logs -f`
+- **No codex in PATH**: Install Codex CLI and configure your API key
+- **Permission denied**: Make sure the binary is executable (`chmod +x`)
+- **Token not found**: Set `VIBES_TOKEN` in `.env` or pass `--token` flag
+
+## License
+
+Apache-2.0
