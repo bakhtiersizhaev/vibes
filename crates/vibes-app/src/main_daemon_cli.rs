@@ -180,7 +180,7 @@ pub(crate) fn run_cli_command(command: &Command, root: &Path) -> anyhow::Result<
     match command {
         Command::Status(_args) => Ok(run_status_command(root).output),
         Command::Init(_) => bail!("init is not wired to Rust daemon runtime yet"),
-        Command::Start(_) => bail!("start is not wired to Rust daemon runtime yet"),
+        Command::Start(args) => run_start_command(root, args),
         Command::Stop(_) => bail!("stop is not wired to Rust daemon runtime yet"),
         Command::Setup(_) => bail!("setup is not wired to Rust daemon runtime yet"),
         Command::Logs(_) => bail!("logs is not wired to Rust daemon runtime yet"),
@@ -741,6 +741,32 @@ VIBES_ADMIN_ID=999
             timeout: 10.0,
         }), &root).unwrap_err();
         assert!(err.to_string().contains("not wired to Rust daemon runtime yet"));
+    }
+
+    #[test]
+    fn run_cli_command_renders_start_preflight() {
+        let root = std::env::temp_dir().join("vibes-daemon-run-cli-start");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join(".env"),
+            "VIBES_TOKEN=env-token\nVIBES_ADMIN_ID=42\nVIBES_PYTHON_BIN=/usr/bin/python3\n",
+        )
+        .unwrap();
+        let output = run_cli_command(
+            &Command::Start(StartArgs {
+                token: None,
+                admin: None,
+                env: None,
+                restart: true,
+            }),
+            &root,
+        )
+        .unwrap();
+        assert!(output.contains("start preflight ready"));
+        assert!(output.contains("token: present"));
+        assert!(output.contains("admin_id: 42"));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
