@@ -242,6 +242,15 @@ pub(crate) struct StartContext {
     pub config: ResolvedStartConfig,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StartLaunchPlan {
+    pub env_path: PathBuf,
+    pub paths: DaemonPaths,
+    pub cmd: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub restart: bool,
+}
+
 pub(crate) fn resolve_start_context(root: &Path, args: &StartArgs) -> StartContext {
     let env_path = args
         .env
@@ -257,7 +266,7 @@ pub(crate) fn resolve_start_context(root: &Path, args: &StartArgs) -> StartConte
     }
 }
 
-pub(crate) fn run_start_command(root: &Path, args: &StartArgs) -> anyhow::Result<String> {
+pub(crate) fn resolve_start_launch_plan(root: &Path, args: &StartArgs) -> anyhow::Result<StartLaunchPlan> {
     let context = resolve_start_context(root, args);
     let token = context
         .config
@@ -268,34 +277,77 @@ pub(crate) fn run_start_command(root: &Path, args: &StartArgs) -> anyhow::Result
             context.env_path.display()
         ))?;
     let paths = daemon_paths(root);
+    let python = context
+        .config
+        .python_bin
+        .clone()
+        .unwrap_or_else(|| {
+            let local = root.join(".venv/bin/python");
+            if local.exists() {
+                local.display().to_string()
+            } else {
+                "python3".to_owned()
+            }
+        });
+    let bot_script = root.join("vibes.py");
+    if !bot_script.exists() {
+        bail!("Не найден {}", bot_script.display());
+    }
+    let mut env = context.file_env.clone();
+    env.insert("VIBES_TOKEN".to_owned(), token);
+    if let Some(admin_id) = context.config.admin_id {
+        env.insert("VIBES_ADMIN_ID".to_owned(), admin_id.to_string());
+    }
+    env.insert("PYTHONUNBUFFERED".to_owned(), "1".to_owned());
+    Ok(StartLaunchPlan {
+        env_path: context.env_path,
+        paths,
+        cmd: vec![python, bot_script.display().to_string()],
+        env,
+        restart: context.config.restart,
+    })
+}
+
+pub(crate) fn run_start_command(root: &Path, args: &StartArgs) -> anyhow::Result<String> {
+    let plan = resolve_start_launch_plan(root, args)?;
     Ok(format!(
         concat!(
-            "start preflight ready\n",
-            "env: {}\n",
-            "runtime: {}\n",
-            "state: {}\n",
-            "log: {}\n",
-            "token: present\n",
-            "admin_id: {}\n",
-            "python: {}\n",
-            "restart: {}\n",
+            "start preflight ready
+",
+            "env: {}
+",
+            "runtime: {}
+",
+            "state: {}
+",
+            "log: {}
+",
+            "token: present
+",
+            "admin_id: {}
+",
+            "python: {}
+",
+            "restart: {}
+",
+            "cmd: {}
+",
             "mode: Rust start wiring not finished yet"
         ),
-        context.env_path.display(),
-        paths.runtime_dir.display(),
-        paths.state_path.display(),
-        paths.daemon_log_path.display(),
-        context
-            .config
-            .admin_id
-            .map(|v| v.to_string())
+        plan.env_path.display(),
+        plan.paths.runtime_dir.display(),
+        plan.paths.state_path.display(),
+        plan.paths.daemon_log_path.display(),
+        plan.env
+            .get("VIBES_ADMIN_ID")
+            .cloned()
             .unwrap_or_else(|| "none".to_owned()),
-        context
-            .config
-            .python_bin
-            .clone()
+        plan.cmd
+            .first()
+            .cloned()
             .unwrap_or_else(|| "none".to_owned()),
-        context.config.restart,
+        plan.restart,
+        plan.cmd.join(" "),
     ))
 }
 
@@ -748,6 +800,7 @@ VIBES_ADMIN_ID=999
         let root = std::env::temp_dir().join("vibes-daemon-run-cli-start");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("vibes.py"), "print(\'hi\')\n").unwrap();
         fs::write(
             root.join(".env"),
             "VIBES_TOKEN=env-token\nVIBES_ADMIN_ID=42\nVIBES_PYTHON_BIN=/usr/bin/python3\n",
@@ -774,6 +827,7 @@ VIBES_ADMIN_ID=999
         let root = std::env::temp_dir().join("vibes-daemon-start-preflight");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("vibes.py"), "print(\'hi\')\n").unwrap();
         fs::write(
             root.join(".env"),
             "VIBES_TOKEN=env-token\nVIBES_ADMIN_ID=42\nVIBES_PYTHON_BIN=/usr/bin/python3\n",
@@ -795,6 +849,57 @@ VIBES_ADMIN_ID=999
         assert!(output.contains("python: /usr/bin/python3"));
         assert!(output.contains("restart: true"));
         assert!(output.contains("mode: Rust start wiring not finished yet"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_start_launch_plan_builds_python_command_and_env() {
+        let root = std::env::temp_dir().join("vibes-daemon-launch-plan");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("vibes.py"), "print('hi')\n").unwrap();
+        fs::write(
+            root.join(".env"),
+            "VIBES_TOKEN=env-token\nVIBES_ADMIN_ID=42\nVIBES_PYTHON_BIN=/usr/bin/python3\nEXTRA=1\n",
+        )
+        .unwrap();
+        let plan = resolve_start_launch_plan(
+            &root,
+            &StartArgs {
+                token: None,
+                admin: None,
+                env: None,
+                restart: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.env_path, root.join(".env"));
+        assert_eq!(plan.cmd, vec!["/usr/bin/python3".to_owned(), root.join("vibes.py").display().to_string()]);
+        assert_eq!(plan.env.get("VIBES_TOKEN").map(String::as_str), Some("env-token"));
+        assert_eq!(plan.env.get("VIBES_ADMIN_ID").map(String::as_str), Some("42"));
+        assert_eq!(plan.env.get("PYTHONUNBUFFERED").map(String::as_str), Some("1"));
+        assert_eq!(plan.env.get("EXTRA").map(String::as_str), Some("1"));
+        assert!(plan.restart);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_start_launch_plan_requires_vibes_py() {
+        let root = std::env::temp_dir().join("vibes-daemon-launch-plan-missing-script");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join(".env"), "VIBES_TOKEN=env-token\n").unwrap();
+        let err = resolve_start_launch_plan(
+            &root,
+            &StartArgs {
+                token: None,
+                admin: None,
+                env: None,
+                restart: false,
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("Не найден"));
         let _ = fs::remove_dir_all(&root);
     }
 
