@@ -105,6 +105,7 @@ pub(crate) fn run_start(args: &StartArgs, root: &Path) -> anyhow::Result<String>
     let mut cmd = StdCommand::new(&exe);
     cmd.stdout(log_file).stderr(log_err);
     cmd.env("VIBES_TOKEN", token);
+    cmd.env("TELOXIDE_TOKEN", token);
     cmd.env("VIBES_DB_PATH", paths.runtime_dir.join("db.sqlite"));
     if let Some(admin) = ctx.config.admin_id {
         cmd.env("VIBES_ADMIN_ID", admin.to_string());

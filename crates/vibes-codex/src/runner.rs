@@ -158,7 +158,8 @@ impl CodexExecRunner {
                     transcript,
                     events,
                 };
-                if result.transcript.conclusion() != Some(RunConclusion::Success) {
+                // Accept Success or Unknown (Codex CLI often omits the success flag)
+                if result.transcript.conclusion() == Some(RunConclusion::Failure) {
                     return Err(CodexRunError::MissingSuccessfulCompletion {
                         conclusion: result.transcript.conclusion(),
                     });
@@ -173,13 +174,10 @@ impl CodexExecRunner {
         label: Option<&str>,
         workspace_root: &Path,
     ) -> Result<SessionHandle, CodexRunError> {
-        let prompt = format!(
-            "Start a new session for Telegram operator context. Label: {}",
-            label.unwrap_or("default")
-        );
+        // Use a minimal prompt that doesn't trigger heavy operations
         let result = self.run(
             &CodexRunRequest {
-                prompt,
+                prompt: "Reply with OK. Do not run any commands.".to_owned(),
                 resume_target: None,
             },
             workspace_root,
@@ -283,6 +281,7 @@ fn build_exec_args(request: &CodexRunRequest) -> Vec<String> {
         args.push(target.to_owned());
     }
     args.push("--json".to_owned());
+    args.push("--full-auto".to_owned());
     args.push(request.prompt.clone());
     args
 }
@@ -298,6 +297,16 @@ mod tests {
             resume_target: Some("sess-123".to_owned()),
         });
 
-        assert_eq!(args, vec!["exec", "resume", "sess-123", "--json", "hello"]);
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "resume",
+                "sess-123",
+                "--json",
+                "--full-auto",
+                "hello"
+            ]
+        );
     }
 }

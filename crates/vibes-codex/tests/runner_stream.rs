@@ -10,7 +10,7 @@ use vibes_codex::{
 };
 
 #[test]
-fn requires_explicit_successful_completion() {
+fn accepts_missing_completion_flag_as_success() {
     let temp = TempDir::new().unwrap();
     let script_path = write_script(
         temp.path(),
@@ -19,7 +19,8 @@ fn requires_explicit_successful_completion() {
     );
     let runner = CodexExecRunner::with_binary(script_path.to_string_lossy());
 
-    let error = runner
+    // Codex CLI alpha often omits the success flag — we accept None as success
+    let result = runner
         .run(
             &CodexRunRequest {
                 prompt: "hello".to_owned(),
@@ -27,12 +28,9 @@ fn requires_explicit_successful_completion() {
             },
             temp.path(),
         )
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(
-        error,
-        CodexRunError::MissingSuccessfulCompletion { conclusion: None }
-    ));
+    assert_eq!(result.session_id.as_deref(), Some("sess-1"));
 }
 
 #[test]

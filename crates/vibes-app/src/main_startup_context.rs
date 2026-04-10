@@ -16,7 +16,10 @@ pub(crate) struct StartupContext {
 }
 
 pub(crate) async fn build_startup_context() -> anyhow::Result<StartupContext> {
-    let bot = Bot::from_env();
+    let bot = env::var("TELOXIDE_TOKEN")
+        .or_else(|_| env::var("VIBES_TOKEN"))
+        .map(Bot::new)
+        .unwrap_or_else(|_| Bot::from_env());
     startup_context_from_get_me(
         bot.clone(),
         bot.get_me().send().await,

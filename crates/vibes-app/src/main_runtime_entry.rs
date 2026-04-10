@@ -13,7 +13,10 @@ pub(crate) async fn run_app() -> anyhow::Result<()> {
         runtime,
         controller,
     } = build_runtime_bootstrap().await?;
-    let executor = CodexPromptExecutor { runner: &runtime };
+    let executor = CodexPromptExecutor {
+        runner: &runtime,
+        bot: bot.clone(),
+    };
 
     start_polling_loop(
         &controller,
