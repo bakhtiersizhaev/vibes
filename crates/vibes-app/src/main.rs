@@ -97,7 +97,16 @@ mod main_codex_request_direct_tests;
 #[cfg(test)]
 mod main_runtime_path_tests;
 
+use clap::Parser;
+use std::path::Path;
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
+    let cli = main_daemon_cli::Cli::parse();
+    if let Some(command) = &cli.command {
+        let output = main_daemon_cli::run_cli_command(command, Path::new("."))?;
+        println!("{output}");
+        return Ok(());
+    }
     main_runtime_entry::run_app().await
 }

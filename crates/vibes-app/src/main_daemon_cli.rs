@@ -1,3 +1,4 @@
+use anyhow::bail;
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -112,6 +113,17 @@ pub(crate) fn render_status_snapshot(snapshot: &StatusSnapshot) -> String {
 
 pub(crate) fn status_output(root: &Path) -> String {
     render_status_snapshot(&resolve_status_snapshot(root))
+}
+
+pub(crate) fn run_cli_command(command: &Command, root: &Path) -> anyhow::Result<String> {
+    match command {
+        Command::Status(_args) => Ok(status_output(root)),
+        Command::Init(_) => bail!("init is not wired to Rust daemon runtime yet"),
+        Command::Start(_) => bail!("start is not wired to Rust daemon runtime yet"),
+        Command::Stop(_) => bail!("stop is not wired to Rust daemon runtime yet"),
+        Command::Setup(_) => bail!("setup is not wired to Rust daemon runtime yet"),
+        Command::Logs(_) => bail!("logs is not wired to Rust daemon runtime yet"),
+    }
 }
 
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
@@ -509,5 +521,26 @@ mod tests {
         assert!(rendered.contains("state: missing"));
         assert!(rendered.contains("runtime: /tmp") == false);
         assert!(rendered.contains(&format!("state: {}", root.join(".vibes/daemon.json").display())));
+    }
+
+    #[test]
+    fn run_cli_command_renders_status_output() {
+        let root = std::env::temp_dir().join("vibes-daemon-run-cli-status");
+        let _ = fs::remove_dir_all(&root);
+        let output = run_cli_command(&Command::Status(StatusArgs {}), &root).unwrap();
+        assert!(output.contains("state: missing"));
+        assert!(output.contains(&format!("runtime: {}", root.join(".vibes").display())));
+    }
+
+    #[test]
+    fn run_cli_command_rejects_unwired_commands() {
+        let root = std::env::temp_dir().join("vibes-daemon-run-cli-unwired");
+        let err = run_cli_command(&Command::Start(StartArgs {
+            token: None,
+            admin: None,
+            env: None,
+            restart: false,
+        }), &root).unwrap_err();
+        assert!(err.to_string().contains("not wired to Rust daemon runtime yet"));
     }
 }
