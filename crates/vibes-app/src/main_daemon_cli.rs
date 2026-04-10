@@ -38,7 +38,7 @@ pub(crate) fn default_env_path(root: &Path) -> PathBuf {
 }
 
 pub(crate) fn daemon_paths(root: &Path) -> DaemonPaths {
-    let runtime_dir = root.join(".vibes-runtime");
+    let runtime_dir = root.join(".vibes");
     DaemonPaths {
         env_path: default_env_path(root),
         state_path: runtime_dir.join("daemon.json"),
@@ -247,9 +247,9 @@ mod tests {
         let root = Path::new("/tmp/vibes-root");
         let paths = daemon_paths(root);
         assert_eq!(paths.env_path, PathBuf::from("/tmp/vibes-root/.env"));
-        assert_eq!(paths.runtime_dir, PathBuf::from("/tmp/vibes-root/.vibes-runtime"));
-        assert_eq!(paths.state_path, PathBuf::from("/tmp/vibes-root/.vibes-runtime/daemon.json"));
-        assert_eq!(paths.daemon_log_path, PathBuf::from("/tmp/vibes-root/.vibes-runtime/daemon.log"));
+        assert_eq!(paths.runtime_dir, PathBuf::from("/tmp/vibes-root/.vibes"));
+        assert_eq!(paths.state_path, PathBuf::from("/tmp/vibes-root/.vibes/daemon.json"));
+        assert_eq!(paths.daemon_log_path, PathBuf::from("/tmp/vibes-root/.vibes/daemon.log"));
     }
 
     #[test]
