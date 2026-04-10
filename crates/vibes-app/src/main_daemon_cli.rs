@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) const ENV_TOKEN_KEYS: &[&str] = &[
@@ -55,6 +56,24 @@ pub(crate) struct DaemonState {
     pub cwd: String,
     pub env_path: String,
     pub daemon_log: String,
+}
+
+pub(crate) fn load_state(path: &Path) -> Option<DaemonState> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<DaemonState>(&text).ok()
+}
+
+pub(crate) fn write_state(path: &Path, state: &DaemonState) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(match path.extension().and_then(|ext| ext.to_str()) {
+        Some(ext) if !ext.is_empty() => format!("{ext}.tmp"),
+        _ => "tmp".to_owned(),
+    });
+    let payload = serde_json::to_string_pretty(state).map_err(std::io::Error::other)?;
+    fs::write(&tmp, payload)?;
+    fs::rename(&tmp, path)
 }
 
 fn first_non_empty<'a>(override_value: Option<&'a str>, env: &'a HashMap<String, String>, keys: &[&str]) -> Option<&'a str> {
@@ -250,6 +269,38 @@ mod tests {
         assert_eq!(paths.runtime_dir, PathBuf::from("/tmp/vibes-root/.vibes"));
         assert_eq!(paths.state_path, PathBuf::from("/tmp/vibes-root/.vibes/daemon.json"));
         assert_eq!(paths.daemon_log_path, PathBuf::from("/tmp/vibes-root/.vibes/daemon.log"));
+    }
+
+    #[test]
+    fn load_state_returns_none_for_missing_or_invalid_json() {
+        let root = std::env::temp_dir().join("vibes-daemon-load-state-invalid");
+        let _ = fs::remove_dir_all(&root);
+        let missing = root.join("daemon.json");
+        assert_eq!(load_state(&missing), None);
+        fs::create_dir_all(&root).unwrap();
+        let invalid = root.join("bad.json");
+        fs::write(&invalid, "not json").unwrap();
+        assert_eq!(load_state(&invalid), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn write_state_roundtrips_and_creates_parent_dir() {
+        let root = std::env::temp_dir().join("vibes-daemon-write-state-roundtrip");
+        let _ = fs::remove_dir_all(&root);
+        let path = root.join("nested/daemon.json");
+        let state = DaemonState {
+            pid: 123,
+            started_at: "2026-04-10T00:00:00Z".to_owned(),
+            cmd: vec!["vibes".to_owned(), "start".to_owned()],
+            cwd: "/tmp/vibes".to_owned(),
+            env_path: "/tmp/vibes/.env".to_owned(),
+            daemon_log: "/tmp/vibes/.vibes/daemon.log".to_owned(),
+        };
+        write_state(&path, &state).unwrap();
+        assert_eq!(load_state(&path), Some(state));
+        assert!(!path.with_extension("json.tmp").exists());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
