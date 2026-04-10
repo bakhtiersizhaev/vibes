@@ -266,6 +266,27 @@ pub(crate) struct StartLaunchPlan {
     pub restart: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StartState {
+    pub pid: i32,
+    pub started_at: String,
+    pub cmd: Vec<String>,
+    pub cwd: String,
+    pub env_path: String,
+    pub daemon_log: String,
+}
+
+pub(crate) fn build_start_state(root: &Path, plan: &StartLaunchPlan, pid: i32, started_at: String) -> StartState {
+    StartState {
+        pid,
+        started_at,
+        cmd: plan.cmd.clone(),
+        cwd: root.display().to_string(),
+        env_path: plan.env_path.display().to_string(),
+        daemon_log: plan.paths.daemon_log_path.display().to_string(),
+    }
+}
+
 pub(crate) fn resolve_start_context(root: &Path, args: &StartArgs) -> StartContext {
     let env_path = args
         .env
@@ -899,6 +920,33 @@ VIBES_ADMIN_ID=999
     }
 
     #[test]
+    fn build_start_state_uses_plan_paths_and_cmd() {
+        let root = std::env::temp_dir().join("vibes-daemon-start-state");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("vibes.py"), "print(\'hi\')\n").unwrap();
+        fs::write(root.join(".env"), "VIBES_TOKEN=env-token\n").unwrap();
+        let plan = resolve_start_launch_plan(
+            &root,
+            &StartArgs {
+                token: None,
+                admin: None,
+                env: None,
+                restart: false,
+            },
+        )
+        .unwrap();
+        let state = build_start_state(&root, &plan, 321, "2026-04-10T01:00:00Z".to_owned());
+        assert_eq!(state.pid, 321);
+        assert_eq!(state.started_at, "2026-04-10T01:00:00Z");
+        assert_eq!(state.cmd, plan.cmd);
+        assert_eq!(state.cwd, root.display().to_string());
+        assert_eq!(state.env_path, root.join(".env").display().to_string());
+        assert_eq!(state.daemon_log, root.join(".vibes/daemon.log").display().to_string());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn resolve_start_launch_plan_requires_vibes_py() {
         let root = std::env::temp_dir().join("vibes-daemon-launch-plan-missing-script");
         let _ = fs::remove_dir_all(&root);
@@ -938,7 +986,6 @@ VIBES_ADMIN_ID=999
     }
 
     #[test]
-    #[test]
     fn looks_like_vibes_process_matches_python_contract() {
         let root = std::env::temp_dir().join("vibes-daemon-looks-like");
         let _ = fs::remove_dir_all(&root);
@@ -962,6 +1009,7 @@ VIBES_ADMIN_ID=999
         let _ = fs::remove_dir_all(&root);
     }
 
+    #[test]
     fn run_status_command_returns_running_exit_code() {
         let root = std::env::temp_dir().join("vibes-daemon-run-status-running");
         let _ = fs::remove_dir_all(&root);
