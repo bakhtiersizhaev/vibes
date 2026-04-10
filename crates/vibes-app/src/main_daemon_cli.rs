@@ -83,6 +83,12 @@ pub(crate) struct StatusSnapshot {
     pub state: Option<DaemonState>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StatusResult {
+    pub output: String,
+    pub exit_code: i32,
+}
+
 pub(crate) fn resolve_status_snapshot(root: &Path) -> StatusSnapshot {
     let paths = daemon_paths(root);
     let state = load_state(&paths.state_path);
@@ -115,9 +121,18 @@ pub(crate) fn status_output(root: &Path) -> String {
     render_status_snapshot(&resolve_status_snapshot(root))
 }
 
+pub(crate) fn run_status_command(root: &Path) -> StatusResult {
+    let snapshot = resolve_status_snapshot(root);
+    let exit_code = if snapshot.state.is_some() { 0 } else { 3 };
+    StatusResult {
+        output: render_status_snapshot(&snapshot),
+        exit_code,
+    }
+}
+
 pub(crate) fn run_cli_command(command: &Command, root: &Path) -> anyhow::Result<String> {
     match command {
-        Command::Status(_args) => Ok(status_output(root)),
+        Command::Status(_args) => Ok(run_status_command(root).output),
         Command::Init(_) => bail!("init is not wired to Rust daemon runtime yet"),
         Command::Start(_) => bail!("start is not wired to Rust daemon runtime yet"),
         Command::Stop(_) => bail!("stop is not wired to Rust daemon runtime yet"),
@@ -542,5 +557,34 @@ mod tests {
             restart: false,
         }), &root).unwrap_err();
         assert!(err.to_string().contains("not wired to Rust daemon runtime yet"));
+    }
+
+    #[test]
+    fn run_status_command_returns_running_exit_code() {
+        let root = std::env::temp_dir().join("vibes-daemon-run-status-running");
+        let _ = fs::remove_dir_all(&root);
+        let paths = daemon_paths(&root);
+        let state = DaemonState {
+            pid: 321,
+            started_at: "2026-04-10T04:00:00Z".to_owned(),
+            cmd: vec!["vibes".to_owned(), "start".to_owned()],
+            cwd: "/tmp/vibes".to_owned(),
+            env_path: "/tmp/vibes/.env".to_owned(),
+            daemon_log: "/tmp/vibes/.vibes/daemon.log".to_owned(),
+        };
+        write_state(&paths.state_path, &state).unwrap();
+        let result = run_status_command(&root);
+        assert_eq!(result.exit_code, 0);
+        assert!(result.output.contains("pid: 321"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn run_status_command_returns_stopped_exit_code() {
+        let root = std::env::temp_dir().join("vibes-daemon-run-status-missing");
+        let _ = fs::remove_dir_all(&root);
+        let result = run_status_command(&root);
+        assert_eq!(result.exit_code, 3);
+        assert!(result.output.contains("state: missing"));
     }
 }

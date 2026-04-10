@@ -104,6 +104,11 @@ use std::path::Path;
 async fn main() -> anyhow::Result<()> {
     let cli = main_daemon_cli::Cli::parse();
     if let Some(command) = &cli.command {
+        if let main_daemon_cli::Command::Status(_args) = command {
+            let result = main_daemon_cli::run_status_command(Path::new("."));
+            println!("{}", result.output);
+            std::process::exit(result.exit_code);
+        }
         let output = main_daemon_cli::run_cli_command(command, Path::new("."))?;
         println!("{output}");
         return Ok(());
