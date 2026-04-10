@@ -235,6 +235,28 @@ pub(crate) fn resolve_start_config(args: &StartArgs, env: &HashMap<String, Strin
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StartContext {
+    pub env_path: PathBuf,
+    pub file_env: HashMap<String, String>,
+    pub config: ResolvedStartConfig,
+}
+
+pub(crate) fn resolve_start_context(root: &Path, args: &StartArgs) -> StartContext {
+    let env_path = args
+        .env
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default_env_path(root));
+    let file_env = parse_env_file(&env_path);
+    let config = resolve_start_config(args, &file_env);
+    StartContext {
+        env_path,
+        file_env,
+        config,
+    }
+}
+
 #[derive(Debug, Parser, PartialEq)]
 #[command(name = "vibes", about = "Rust daemon/runtime entrypoint for vibes")]
 pub(crate) struct Cli {
@@ -485,6 +507,55 @@ mod tests {
                 restart: false,
             }
         );
+    }
+
+    #[test]
+    fn resolve_start_context_reads_env_file_and_default_path() {
+        let root = std::env::temp_dir().join("vibes-daemon-start-context-default");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let env_path = root.join(".env");
+        fs::write(&env_path, "VIBES_TOKEN=env-token
+VIBES_ADMIN_ID=123
+VIBES_PYTHON_BIN=/usr/bin/python3
+").unwrap();
+        let args = StartArgs {
+            token: None,
+            admin: None,
+            env: None,
+            restart: true,
+        };
+        let context = resolve_start_context(&root, &args);
+        assert_eq!(context.env_path, env_path);
+        assert_eq!(context.file_env.get("VIBES_TOKEN").map(String::as_str), Some("env-token"));
+        assert_eq!(context.config.token.as_deref(), Some("env-token"));
+        assert_eq!(context.config.admin_id, Some(123));
+        assert_eq!(context.config.python_bin.as_deref(), Some("/usr/bin/python3"));
+        assert!(context.config.restart);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_start_context_honors_custom_env_path_and_cli_overrides() {
+        let root = std::env::temp_dir().join("vibes-daemon-start-context-custom");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let env_path = root.join("custom.env");
+        fs::write(&env_path, "VIBES_TOKEN=file-token
+VIBES_ADMIN_ID=999
+").unwrap();
+        let args = StartArgs {
+            token: Some("cli-token".to_owned()),
+            admin: Some(123),
+            env: Some(env_path.display().to_string()),
+            restart: false,
+        };
+        let context = resolve_start_context(&root, &args);
+        assert_eq!(context.env_path, env_path);
+        assert_eq!(context.file_env.get("VIBES_TOKEN").map(String::as_str), Some("file-token"));
+        assert_eq!(context.config.token.as_deref(), Some("cli-token"));
+        assert_eq!(context.config.admin_id, Some(123));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
