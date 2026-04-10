@@ -3,8 +3,8 @@ use vibes_app::{AppController, AppService};
 use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
-use crate::main_runtime_topics::BotTopicManager;
 use crate::main_runtime_store::open_sqlite_store;
+use crate::main_runtime_topics::BotTopicManager;
 
 pub(crate) type RuntimeController =
     AppController<SqliteBindingStore, CodexExecRunner, BotTopicManager>;

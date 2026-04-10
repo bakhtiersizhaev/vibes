@@ -79,5 +79,4 @@ final line";
         assert_eq!(request.resume_target.as_deref(), Some("sess-123"));
         assert_eq!(cwd, std::path::PathBuf::from("/tmp/vibes-workspace"));
     }
-
 }

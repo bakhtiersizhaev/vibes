@@ -28,5 +28,3 @@ impl TopicManager for BotTopicManager {
         })
     }
 }
-
-

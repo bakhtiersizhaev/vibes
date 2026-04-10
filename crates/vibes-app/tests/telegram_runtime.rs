@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if, clippy::default_constructed_unit_structs)]
+
 use std::sync::Mutex;
 
 use async_trait::async_trait;

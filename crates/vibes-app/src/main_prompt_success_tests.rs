@@ -86,5 +86,4 @@ mod tests {
         assert_eq!(sent[0].0, target);
         assert_eq!(sent[0].1, "noop");
     }
-
-    }
+}

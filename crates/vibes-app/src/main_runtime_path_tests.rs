@@ -37,5 +37,4 @@ mod tests {
         assert_eq!(workspace_root, ".");
         assert_eq!(db_path, "/tmp/custom.sqlite3");
     }
-
 }

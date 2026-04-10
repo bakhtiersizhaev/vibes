@@ -1,7 +1,7 @@
 use teloxide::{Bot, types::Update};
 
-use crate::main_runtime_listener::handle_next_listener_event;
 use crate::main_runtime_builder::build_runtime_components;
+use crate::main_runtime_listener::handle_next_listener_event;
 use crate::main_test_support::{NoopExecutor, unique_db_path};
 
 #[cfg(test)]
@@ -109,5 +109,4 @@ mod tests {
             std::fs::remove_file(db_path).unwrap();
         }
     }
-
 }

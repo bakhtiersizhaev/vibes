@@ -3,13 +3,18 @@ use vibes_codex::CodexExecRunner;
 use vibes_store::SqliteBindingStore;
 
 use crate::main_runtime_controller::{RuntimeController, build_runtime_controller};
-use crate::main_runtime_topics::BotTopicManager;
 use crate::main_runtime_store::open_sqlite_store;
+use crate::main_runtime_topics::BotTopicManager;
 
 pub(crate) fn build_runtime_components(
     bot: &Bot,
     db_path: &str,
-) -> anyhow::Result<(SqliteBindingStore, CodexExecRunner, BotTopicManager, RuntimeController)> {
+) -> anyhow::Result<(
+    SqliteBindingStore,
+    CodexExecRunner,
+    BotTopicManager,
+    RuntimeController,
+)> {
     let store = open_sqlite_store(db_path)?;
     let runtime = CodexExecRunner::default();
     let topics = BotTopicManager::new(bot);

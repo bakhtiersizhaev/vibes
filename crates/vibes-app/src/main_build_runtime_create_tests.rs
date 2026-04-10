@@ -20,5 +20,4 @@ mod tests {
         assert!(db_path.exists());
         std::fs::remove_file(db_path).unwrap();
     }
-
 }
