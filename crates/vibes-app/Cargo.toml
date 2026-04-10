@@ -5,6 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+autobins = false
+default-run = "vibes"
+
+[[bin]]
+name = "vibes"
+path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
